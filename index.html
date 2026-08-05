@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>مجتمع المزهر 🏆 — التحديات والمسابقات</title>
+<title>مسابقات وتحديات المزهر 🏆 — التحديات والمسابقات</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&family=Lalezar&family=Cairo:wght@700;900&display=swap" rel="stylesheet">
@@ -298,7 +298,7 @@ body{
 
 <div id="splash" class="splash">
     <img src="https://i.ibb.co/FkZTVc2g/designarena-image-p5yzw79n.jpg" alt="logo" class="logo-bounce" />
-    <h1>مجتمع المزهر</h1>
+    <h1>مسابقات وتحديات المزهر</h1>
     <p>التحديات والمسابقات بين الأبطال 🔥</p>
 </div>
 
@@ -307,7 +307,7 @@ body{
     function go(){
         var s=document.getElementById('splash'); if(!s)return;
         s.classList.add('hide');
-        setTimeout(function(){ s.style.display='none'; var l=document.getElementById('loginPage'); if(l)l.classList.remove('hidden'); },500);
+        setTimeout(function(){ s.style.display='none'; var l=document.getElementById('loginPage'); if(l){l.classList.remove('hidden'); setLoginRole('teacher');} },500);
     }
     if(document.readyState==='complete'||document.readyState==='interactive')setTimeout(go,2400);
     else document.addEventListener('DOMContentLoaded',function(){ setTimeout(go,1000); });
@@ -319,13 +319,14 @@ body{
     <div class="login-wrap">
         <div class="glass login-card">
             <div class="logo-circle">🏆</div>
-            <h2>مجتمع المزهر</h2>
+            <h2>مسابقات وتحديات المزهر</h2>
             <p class="login-sub">اختر دورك وسجّل دخولك للمنافسة</p>
             <div class="role-tabs">
                 <button class="role-tab active" data-role="teacher" onclick="setLoginRole('teacher')">👨‍🏫 معلم</button>
                 <button class="role-tab" data-role="student" onclick="setLoginRole('student')">🎓 طالب</button>
                 <button class="role-tab" data-role="guardian" onclick="setLoginRole('guardian')">👨‍👩‍👦 ولي أمر</button>
                 <button class="role-tab" data-role="judge" onclick="setLoginRole('judge')">⚖️ محكم</button>
+                <button class="role-tab" data-role="assistant" onclick="setLoginRole('assistant')">👤 مساعد</button>
                 <button class="role-tab" data-role="external" onclick="setLoginRole('external')">📱 خارجي</button>
             </div>
             <div id="loginGroupTeacher" class="hidden">
@@ -338,6 +339,9 @@ body{
             <div id="loginGroupJudge" class="hidden">
                 <div class="input-group"><label class="label">⚖️ اسم المحكم</label><input type="text" class="input" id="loginJudgeName" placeholder="الاسم" /></div>
                 <div class="input-group"><label class="label">🔢 الرقم السري</label><input type="password" class="input" id="loginJudgeSecret" placeholder="الرقم السري من المعلم" /></div>
+            </div>
+            <div id="loginGroupAssistant" class="hidden">
+                <div class="input-group"><label class="label">🔑 كلمة مرور المساعد</label><input type="password" class="input" id="loginAssistantPwd" placeholder="كلمة المرور من المعلم" /></div>
             </div>
             <div id="loginGroupExternal" class="hidden">
                 <div class="input-group"><label class="label">📱 رقم الهاتف</label><input type="tel" class="input" id="loginExternalPhone" placeholder="مثال: 01012345678" /></div>
@@ -386,7 +390,8 @@ body{
             <div class="input-group"><label class="label">🖼️ صورة الغلاف (اختياري)</label><input type="file" class="input" id="nsLinkFile" accept="image/*" /></div>
         </div>
         <div id="nsBlockVideo" class="hidden">
-            <div class="msg info">🎬 رفع الفيديو مباشرة سيأتي لاحقاً — استخدم <b>رابط</b> الآن أو ارفع صورة/صوت.</div>
+            <div class="input-group"><label class="label">🎬 ملف فيديو</label><input type="file" class="input" id="nsVideoFile" accept="video/mp4,video/webm,video/ogg,video/*" onchange="previewVideoDuration()" /></div>
+            <div id="nsVideoMeta" class="text-white-50 mt-1" style="font-size:.75rem"></div>
         </div>
         <div id="nsPreview"></div>
         <button class="btn btn-success btn-block mt-2" onclick="submitNewSubmission()">حفظ وإرسال ✅</button>
@@ -480,7 +485,7 @@ function celebrateChampion(name,compTitle,ch){
     o.innerHTML='<div class="champ-rays"></div>'+
     '<div class="champ-rays r2"></div>'+
     '<div class="champ-grand-inner">'+
-    '<div class="champ-grand-kicker">🎉 اسطووورة من مجتمع المزهر 🎉</div>'+
+    '<div class="champ-grand-kicker">🎉 اسطووورة من مسابقات وتحديات المزهر 🎉</div>'+
     '<div class="champ-crown-big">👑</div>'+
     '<div style="font-family:\'Lalezar\',sans-serif;font-size:4.2rem;line-height:1.15;font-weight:900;background:linear-gradient(180deg,#fff7d6,#ffd23f 45%,#b8860b);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;filter:drop-shadow(0 0 40px rgba(255,210,63,.9));animation:gloryGlow 1.2s ease-in-out infinite">'+escapeHtml(name)+'</div>'+
     '<div class="champ-grand-title">بطل مسابقة «'+escapeHtml(compTitle||'')+'» 🏆</div>'+
@@ -574,7 +579,7 @@ function initAnnounceListener(){
     });
 }
 function compInScopeSafe(compId){
-    if(currentUser.role==='teacher'||currentUser.role==='judge')return Promise.resolve(true);
+    if(isAdmin()||currentUser.role==='judge')return Promise.resolve(true);
     return db.ref('communityComps/'+compId).once('value').then(snap=>{
         const c=snap.val(); if(!c)return false;
         return compInScope(Object.assign({},c,{id:compId}));
@@ -588,7 +593,7 @@ function scanAnnouncements(){
         snap.forEach(child=>{ const c=child.val(); c.id=child.key; arr.push(c); });
         arr.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
         arr.forEach(c=>{
-            if(c.archived&&currentUser.role!=='teacher')return;
+            if(c.archived&&!isAdmin())return;
             if(!compInScope(c))return;
             if(c.status==='open'){
                 const ck='ann_reg_'+c.id;
@@ -645,6 +650,56 @@ function uploadImage(file){
         fetch('https://api.imgbb.com/1/upload',{method:'POST',body:fd}).then(r=>r.json()).then(d=>d.success?res(d.data.display_url||d.data.url):rej('فشل رفع الصورة')).catch(rej);
     });
 }
+function uploadVideo(file){
+    return new Promise((res,rej)=>{
+        const fd=new FormData();
+        fd.append('reqtype','fileupload');
+        fd.append('userhash','');
+        fd.append('fileToUpload',file);
+        fetch('https://catbox.moe/user/api.php',{method:'POST',body:fd})
+            .then(r=>r.text())
+            .then(t=>{
+                const t2=(t||'').trim();
+                if(t2&&t2.indexOf('http')===0)res(t2);
+                else rej(t2||'فشل رفع الفيديو');
+            })
+            .catch(e=>rej(e));
+    });
+}
+function readVideoDuration(file,limitSec){
+    return new Promise((res,rej)=>{
+        const url=URL.createObjectURL(file);
+        const v=document.createElement('video');
+        v.preload='metadata';
+        let done=false;
+        v.onloadedmetadata=function(){
+            URL.revokeObjectURL(url);
+            done=true;
+            res(v.duration);
+        };
+        v.onerror=function(){ URL.revokeObjectURL(url); done=true; rej(new Error('تعذّر قراءة الفيديو')); };
+        v.src=url;
+        setTimeout(function(){ if(!done){ URL.revokeObjectURL(url); rej(new Error('مهلة قراءة الفيديو')); } }, 8000);
+    });
+}
+function previewVideoDuration(){
+    const meta=document.getElementById('nsVideoMeta'); if(!meta)return;
+    const f=document.getElementById('nsVideoFile').files[0];
+    if(!f){ meta.textContent=''; return; }
+    readVideoDuration(f,0).then(dur=>{
+        meta.textContent='⏱️ المدة: '+formatDur(dur)+' — الحجم: '+fmtSize(f.size);
+    }).catch(()=>{ meta.textContent=''+(f&&f.name?f.name:'')+' ('+fmtSize(f.size)+')'; });
+}
+function formatDur(sec){
+    if(!isFinite(sec)||sec<0)return '؟';
+    const s=Math.round(sec), m=Math.floor(s/60), rs=s%60;
+    return m+':'+(rs<10?'0':'')+rs;
+}
+function fmtSize(b){
+    if(!b&&b!==0)return '';
+    if(b/(1024*1024)>=1)return (b/1024/1024).toFixed(1)+' MB';
+    return Math.max(1,Math.round(b/1024))+' KB';
+}
 function fixAudioDataUri(uri){
     if(typeof uri!=='string'||!uri||uri.indexOf('data:')!==0)return uri;
     const comma=uri.indexOf(','); if(comma<0)return uri;
@@ -690,22 +745,59 @@ function attachAudioPlayer(wrap,dataUri){
 function makeVoterKey(){
     if(!currentUser)return null;
     if(currentUser.role==='teacher')return 'teacher';
+    if(currentUser.role==='assistant')return 'ast:'+currentUser.key;
     if(currentUser.role==='judge')return 'judge:'+currentUser.key;
     if(currentUser.role==='external')return 'ext:'+currentUser.phone;
     return (currentUser.role==='student'?'stu':'guard')+':'+currentUser._key;
+}
+function isAdmin(){
+    return currentUser&&(currentUser.role==='teacher'||currentUser.role==='assistant');
+}
+var voteWeights={teacher:1,student:1,guardian:1,judge:1,external:1};
+var voteWeightsLoaded=false;
+var videoMaxSec=120;
+function loadVideoMaxSec(){
+    db.ref('communityConfig/videoMaxSec').once('value',snap=>{
+        const v=snap.val();
+        if(v!==null&&v!==undefined&&!isNaN(parseFloat(v)))videoMaxSec=Math.max(0,parseFloat(v));
+        const el=document.getElementById('vmsInput'); if(el)el.value=videoMaxSec;
+    });
+}
+function roleFromVoterKey(k){
+    if(!k)return null;
+    if(k==='teacher'||k.indexOf('ast:')===0)return 'teacher';
+    if(k.indexOf('judge:')===0)return 'judge';
+    if(k.indexOf('ext:')===0)return 'external';
+    if(k.indexOf('stu:')===0)return 'student';
+    if(k.indexOf('guard:')===0)return 'guardian';
+    return null;
+}
+function loadVoteWeights(){
+    db.ref('communityConfig/voteWeights').once('value',snap=>{
+        const v=snap.val()||{};
+        voteWeights={teacher:1,student:1,guardian:1,judge:1,external:1};
+        ['teacher','student','guardian','judge','external'].forEach(r=>{
+            const n=parseFloat(v[r]);
+            if(!isNaN(n)&&n>0)voteWeights[r]=n;
+        });
+        voteWeightsLoaded=true;
+        ['vwTeacher','vwStudent','vwGuardian','vwJudge','vwExternal'].forEach(id=>{
+            const el=document.getElementById(id); if(el)el.value=voteWeights[id.replace('vw','').toLowerCase()];
+        });
+    });
 }
 function notifyStudent(group,sn,title,message){
     if(!group||sn===undefined||sn===null||sn==='')return;
     db.ref('notifications/'+group+'/'+sn).push({ title,message,category:'general',
         date:new Date().toLocaleDateString('ar-EG'), time:new Date().toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}),
-        createdAt:Date.now(), seen:false, type:'general', sender:'مجتمع المزهر 🏆' });
+        createdAt:Date.now(), seen:false, type:'general', sender:'مسابقات وتحديات المزهر 🏆' });
 }
 function notifyGroupStudents(groupName,title,message){
     db.ref('students').orderByChild('group').equalTo(groupName).once('value',snap=>{
         if(snap.exists())snap.forEach(c=>{ const s=c.val(); notifyStudent(groupName,s.studentNumber,title,message); });
     });
 }
-function roleLabel(r){ return ({teacher:'👨‍🏫 معلم — تحكم كامل',student:'🎓 طالب',guardian:'👨‍👩‍👦 ولي أمر',judge:'⚖️ محكم',external:'📱 خارجي'})[r]||''; }
+function roleLabel(r){ return ({teacher:'👨‍🏫 معلم — تحكم كامل',assistant:'👤 مساعد — تحكم كامل',student:'🎓 طالب',guardian:'👨‍👩‍👦 ولي أمر',judge:'⚖️ محكم',external:'📱 خارجي'})[r]||''; }
 function avatarHTML(p,sizeCls){
     const c=sizeCls||'part-avatar';
     if(p&&p.photo)return '<img class="'+c+'" src="'+escapeHtml(p.photo)+'" />';
@@ -717,10 +809,11 @@ function avatarHTML(p,sizeCls){
 function setLoginRole(r){
     loginRole=r;
     document.querySelectorAll('.role-tabs .role-tab').forEach(b=>b.classList.toggle('active',b.dataset.role===r));
-    ['loginGroupTeacher','loginGroupStudent','loginGroupJudge','loginGroupExternal'].forEach(id=>document.getElementById(id).classList.add('hidden'));
+    ['loginGroupTeacher','loginGroupStudent','loginGroupJudge','loginGroupAssistant','loginGroupExternal'].forEach(id=>document.getElementById(id).classList.add('hidden'));
     if(r==='teacher')document.getElementById('loginGroupTeacher').classList.remove('hidden');
     else if(r==='student'||r==='guardian'){ document.getElementById('loginGroupStudent').classList.remove('hidden'); loadStudentGroups(); }
     else if(r==='judge')document.getElementById('loginGroupJudge').classList.remove('hidden');
+    else if(r==='assistant')document.getElementById('loginGroupAssistant').classList.remove('hidden');
     else if(r==='external')document.getElementById('loginGroupExternal').classList.remove('hidden');
     msgHide('loginMsg');
 }
@@ -758,6 +851,14 @@ async function doLogin(){
             if(snap.exists())snap.forEach(child=>{ const j=child.val(); if(j.name===name&&j.secret===secret&&j.active!==false){ found=j; foundKey=child.key; } });
             if(!found){ msg('loginMsg','❌ المحكم غير موجود أو الرقم السري خاطئ','error'); return; }
             currentUser={role:'judge',name:found.name,key:foundKey};
+        }else if(loginRole==='assistant'){
+            const pwd=document.getElementById('loginAssistantPwd').value.trim();
+            if(!pwd){ msg('loginMsg','❌ أدخل كلمة المرور','error'); return; }
+            const snap=await db.ref('assistants').once('value');
+            let found=null,foundKey=null;
+            if(snap.exists())snap.forEach(child=>{ const a=child.val(); if(a.password===pwd&&a.active!==false){ found=a; foundKey=child.key; } });
+            if(!found){ msg('loginMsg','❌ المساعد غير موجود أو الحساب غير نشط','error'); return; }
+            currentUser={role:'assistant',name:found.name||'مساعد',key:foundKey};
         }else if(loginRole==='external'){
             let phone=document.getElementById('loginExternalPhone').value.trim();
             if(!phone){ msg('loginMsg','❌ أدخل رقم الهاتف','error'); return; }
@@ -793,6 +894,8 @@ function logout(){
 function enterApp(){
     document.getElementById('appUserName').textContent=currentUser.name+(currentUser.group?' — '+currentUser.group:'');
     document.getElementById('appUserRole').textContent=roleLabel(currentUser.role);
+    loadVoteWeights();
+    loadVideoMaxSec();
     routeView='home'; routeCompId=null; renderNav(); renderRoute();
     setTimeout(()=>{ initAnnounceListener(); scanAnnouncements(); },400);
 }
@@ -805,7 +908,7 @@ function navItems(){
         {id:'stars',icon:'⭐',label:'الأبطال'},
         {id:'profile',icon:'👤',label:'حسابي'}
     ];
-    if(currentUser.role==='teacher')items.push({id:'admin',icon:'🎛️',label:'الإدارة'});
+    if(isAdmin())items.push({id:'admin',icon:'🎛️',label:'الإدارة'});
     return items;
 }
 function renderNav(){
@@ -840,7 +943,7 @@ function renderHome(){
     '<h1 class="fun-title grad-text">مسابقات وتحديات الأبطال</h1>'+
     '<p>تحديات تنافسية بين الطلاب بخروج المغلوب — ارفع مشاركتك، صوّت لأقوى منافس، وتوّج بالكأس 🏆</p>'+
     '<div class="cta-row">'+
-    (currentUser.role==='teacher'?'<button class="btn btn-primary btn-big" onclick="routeView=\'create\';renderNav();renderRoute()">➕ مسابقة جديدة</button>':'')+
+    (isAdmin()?'<button class="btn btn-primary btn-big" onclick="routeView=\'create\';renderNav();renderRoute()">➕ مسابقة جديدة</button>':'')+
     '<button class="btn btn-violet btn-big" onclick="routeView=\'battles\';renderNav();renderRoute()">🔥 شوف المواجهات</button>'+
     '</div>';
     body.appendChild(hero);
@@ -859,7 +962,7 @@ function renderHome(){
         cont.appendChild(card);
         let shown=0;
         arr.forEach(c=>{
-            if(c.archived&&currentUser.role!=='teacher')return;
+            if(c.archived&&!isAdmin())return;
             if(!compInScope(c))return;
             const card=compCard(c);
             cont.appendChild(card);
@@ -870,11 +973,16 @@ function renderHome(){
     });
 }
 function compInScope(c){
-    if(currentUser.role==='teacher'||currentUser.role==='judge')return true;
+    if(isAdmin()||currentUser.role==='judge')return true;
     if(currentUser.role==='external')return c.status!=='finished';
     const g=currentUser.group; if(!g)return false;
     if(!c.groups||!c.groups.length)return true;
     return c.groups.indexOf(g)!==-1;
+}
+function compVoteScope(c){
+    if(isAdmin()||currentUser.role==='judge')return true;
+    if(currentUser.role==='external')return c.status!=='finished';
+    return true;
 }
 function compCard(c){
     const card=document.createElement('div'); card.className='glass comp-card reveal';
@@ -883,7 +991,7 @@ function compCard(c){
     const cover=c.cover?'<img class="comp-cover" src="'+escapeHtml(c.cover)+'" />':'<div class="comp-cover-icon">🏆</div>';
     const med=((c.mediaTypes&&c.mediaTypes.image)?'🖼️ ':'')+((c.mediaTypes&&c.mediaTypes.audio)?'🎤':'')+((c.mediaTypes&&c.mediaTypes.link)?'🔗 ':'')+((c.mediaTypes&&c.mediaTypes.video)?'🎬':'');
     let admin='';
-    if(currentUser.role==='teacher'){
+    if(isAdmin()){
         admin='<div class="quick-actions">'+
         '<button class="btn btn-secondary btn-xs" onclick="editComp(\''+escapeHtml(c.id)+'\');event.stopPropagation();">✏️ تعديل</button>'+
         '<button class="btn btn-secondary btn-xs" onclick="toggleArchiveComp(\''+escapeHtml(c.id)+'\');event.stopPropagation();">'+(c.archived?'📂 إظهار':'📦 أرشفة')+'</button>'+
@@ -917,12 +1025,12 @@ function renderVote(){
         snap.forEach(child=>{
             const c=child.val(); c.id=child.key;
             if(c.archived)return;
-            if(!compInScope(c))return;
+            if(!compVoteScope(c))return;
             const rounds=c.rounds||{};
             const cr=c.currentRound;
             const r=rounds[cr];
             if(!r)return;
-            const keys=Object.keys(r).filter(mid=>!r[mid].bye).filter(mid=>currentUser.role==='teacher'||!r[mid].resolved);
+            const keys=Object.keys(r).filter(mid=>!r[mid].bye).filter(mid=>isAdmin()||!r[mid].resolved);
             if(!keys.length)return;
             const head=document.createElement('div'); head.className='glass card';
             head.innerHTML='<div class="section-title">'+escapeHtml(c.title||'')+' <div class="spacer"></div><span class="badge '+(roundVotingOpen(c)?'live':'done')+'">'+roundLabel(c,cr)+' — '+(roundVotingOpen(c)?'🗳️ التصويت مفتوح':'🔒 مغلق')+'</span></div>'+voteTimerHTML(c);
@@ -943,7 +1051,7 @@ function renderVote(){
 function voteCard(c,rn,mid,m){
     const card=document.createElement('div'); card.className='glass card vote-arena battle-card';
     const cc=countVotes(m);
-    const isStaff=currentUser.role==='teacher'||currentUser.role==='judge';
+    const isStaff=isAdmin()||currentUser.role==='judge';
     const reveal=isStaff||m.resolved;
     const total=reveal?cc.a+cc.b:0;
     const pa=total?Math.round(cc.a/total*100):50, pb=total?Math.round(cc.b/total*100):50;
@@ -986,7 +1094,7 @@ function renderBattles(){
             Object.keys(r).forEach(mid=>{
                 const m=r[mid];
                 if(m.bye)return;
-                if(currentUser.role!=='teacher'&&m.resolved)return;
+                if(!isAdmin()&&m.resolved)return;
                 const card=battleCard(c,cr,mid,m);
                 card.classList.add('tint-'+((tint%3)+1)); tint++;
                 cont.appendChild(card);
@@ -999,7 +1107,7 @@ function renderBattles(){
 function battleCard(c,rn,mid,m){
     const card=document.createElement('div'); card.className='glass comp-card battle-card';
     const cc=countVotes(m);
-    const isStaff=currentUser.role==='teacher'||currentUser.role==='judge';
+    const isStaff=isAdmin()||currentUser.role==='judge';
     const reveal=isStaff||m.resolved;
     const total=reveal?cc.a+cc.b:0;
     const pa=total?Math.round(cc.a/total*100):50, pb=total?Math.round(cc.b/total*100):50;
@@ -1030,7 +1138,7 @@ function renderMap(){
         if(!snap.exists()){ cont.innerHTML='<div class="glass card empty-state">لا توجد مسابقات</div>'; return; }
         snap.forEach(child=>{
             const c=child.val(); c.id=child.key;
-            if(c.archived&&currentUser.role!=='teacher')return;
+            if(c.archived&&!isAdmin())return;
             if(!compInScope(c))return;
             cont.appendChild(bracketCard(c));
         });
@@ -1074,7 +1182,7 @@ function renderStars(){
         const medals=['🥇','🥈','🥉'];
         let mi=0, count=0;
         const arr=[];
-        if(snap.exists())snap.forEach(child=>{ const c=child.val(); if(c.champion&&!c.archived)arr.push({id:child.key,c}); });
+        if(snap.exists())snap.forEach(child=>{ const c=child.val(); if(c.champion)arr.push({id:child.key,c}); });
         arr.sort((a,b)=>(b.c.champion&&b.c.champion.at||0)-(a.c.champion&&a.c.champion.at||0));
         if(!arr.length){ cont.innerHTML='<div class="glass card empty-state">لا يوجد أبطال بعد — كن أول من يتوّج 🏆</div>'; return; }
         arr.forEach(({c})=>{
@@ -1174,7 +1282,7 @@ async function syncParticipantPhoto(url){
 
 // ===== ADMIN (teacher) =====
 function renderAdmin(){
-    if(currentUser.role!=='teacher'){ renderHome(); return; }
+    if(!isAdmin()){ renderHome(); return; }
     const body=document.getElementById('appBody');
     body.innerHTML='<div class="glass card"><div class="fun-title grad-text">🎛️ لوحة تحكم المعلم</div><div class="comp-desc mt-1">سيطرة كاملة على المسابقات والطلاب والمحكمين</div></div>';
     const stats=document.createElement('div'); stats.className='mgrid mt-2'; body.appendChild(stats);
@@ -1214,6 +1322,21 @@ function renderAdmin(){
             '</div>';
         });
         main.innerHTML+='</div>';
+        // vote weights
+        main.innerHTML+='<div class="glass card"><div class="section-title">⚖️ نقاط الأصوات (لكل دور) <div class="spacer"></div><button class="btn btn-primary btn-sm" onclick="saveVoteWeights()">💾 حفظ</button></div>'+
+        '<div class="comp-desc mt-1">وزن صوت كل دور يُحتسب في النتيجة النهائية (الافتراضي 1)</div>'+
+        '<div class="actions-row mt-1" style="flex-wrap:wrap">'+
+        '<div class="input-group" style="flex:1;min-width:110px"><label class="label">👨‍🏫 معلم</label><input type="number" min="1" step="1" class="input" id="vwTeacher" value="'+voteWeights.teacher+'" /></div>'+
+        '<div class="input-group" style="flex:1;min-width:110px"><label class="label">🎓 طالب</label><input type="number" min="1" step="1" class="input" id="vwStudent" value="'+voteWeights.student+'" /></div>'+
+        '<div class="input-group" style="flex:1;min-width:110px"><label class="label">👨‍👩‍👦 ولي أمر</label><input type="number" min="1" step="1" class="input" id="vwGuardian" value="'+voteWeights.guardian+'" /></div>'+
+        '<div class="input-group" style="flex:1;min-width:110px"><label class="label">⚖️ محكم</label><input type="number" min="1" step="1" class="input" id="vwJudge" value="'+voteWeights.judge+'" /></div>'+
+        '<div class="input-group" style="flex:1;min-width:110px"><label class="label">📱 خارجي</label><input type="number" min="1" step="1" class="input" id="vwExternal" value="'+voteWeights.external+'" /></div>'+
+        '</div><div id="vwMsg" class="msg" style="display:none"></div></div>';
+        // video duration
+        main.innerHTML+='<div class="glass card"><div class="section-title">🎬 حد مدة الفيديو <div class="spacer"></div><button class="btn btn-primary btn-sm" onclick="saveVideoMaxSec()">💾 حفظ</button></div>'+
+        '<div class="comp-desc mt-1">أقصى مدة فيديو للمشاركة بالثواني (اكتب 0 = بدون حد). الافتراضي 120 ثانية (دقيقتان)</div>'+
+        '<div class="actions-row mt-1"><div class="input-group" style="flex:1;min-width:150px"><label class="label">🎬 الحد بالثواني</label><input type="number" min="0" step="5" class="input" id="vmsInput" value="'+videoMaxSec+'" /></div></div>'+
+        '<div id="vmsMsg" class="msg" style="display:none"></div></div>';
         // judges
         main.innerHTML+='<div class="glass card"><div class="section-title">⚖️ المحكمون <div class="spacer"></div><button class="btn btn-success btn-sm" onclick="addJudge()">➕ محكم</button></div><div id="adminJudges"><span class="text-white-50">تحميل...</span></div></div>';
         initJudgesPanel(main);
@@ -1248,6 +1371,27 @@ async function toggleJudge(key){
     if(!snap.exists())return;
     const cur=snap.val();
     await db.ref('communityJudges/'+key).update({active:cur.active===false});
+}
+function saveVoteWeights(){
+    const getv=function(id){ const n=parseFloat(document.getElementById(id).value); return (!isNaN(n)&&n>0)?n:1; };
+    const vw={teacher:getv('vwTeacher'),student:getv('vwStudent'),guardian:getv('vwGuardian'),judge:getv('vwJudge'),external:getv('vwExternal')};
+    db.ref('communityConfig/voteWeights').set(vw).then(()=>{
+        voteWeights=vw; voteWeightsLoaded=true;
+        const msg=document.getElementById('vwMsg');
+        if(msg){ msg.style.display='block'; msg.className='msg ok'; msg.textContent='✅ حُفظت نقاط الأصوات بنجاح'; setTimeout(()=>{msg.style.display='none';},2500); }
+        showToast('✅ حُفظت نقاط الأصوات — ستنعكس على الحسابات فوراً');
+    }).catch(e=>{ showToast('❌ '+(e.message||e)); });
+}
+function saveVideoMaxSec(){
+    const el=document.getElementById('vmsInput');
+    let v=120;
+    if(el){ const n=Math.round(parseFloat(el.value)); v=(!isNaN(n)&&n>=0)?n:120; }
+    db.ref('communityConfig/videoMaxSec').set(v).then(()=>{
+        videoMaxSec=v;
+        const msg=document.getElementById('vmsMsg');
+        if(msg){ msg.style.display='block'; msg.className='msg ok'; msg.textContent='✅ حُفظ حد مدة الفيديو ('+formatDur(v)+(v===0?' — بدون حد':'')+')'; setTimeout(()=>{msg.style.display='none';},2500); }
+        showToast('✅ حُفظ حد مدة الفيديو');
+    }).catch(e=>{ showToast('❌ '+(e.message||e)); });
 }
 
 // ===== CREATE =====
@@ -1284,7 +1428,7 @@ async function saveNewComp(){
     if(file){ msg('ncMsg','⏳ رفع الغلاف...','info'); try{ cover=await uploadImage(file); }catch(e){ msg('ncMsg','❌ فشل رفع الغلاف (سيكمل بدون)','error'); } }
     const ref=db.ref('communityComps').push();
     await ref.set({ title,desc,groups,mediaTypes,cover,status:'open',createdAt:Date.now(),createdBy:currentUser.name, participants:{}, rounds:{}, currentRound:0, champion:null, allowNewSubmission:false, judgedNotice:false });
-    if(groups.length){ groups.forEach(g=>notifyGroupStudents(g,'🏆 مسابقة جديدة: '+title,'من مجتمع المزهر — رفع الاشتراك في صفحة مجتمع المزهر الآن!')); }
+    if(groups.length){ groups.forEach(g=>notifyGroupStudents(g,'🏆 مسابقة جديدة: '+title,'من مسابقات وتحديات المزهر — ارفع اشتراكك في صفحة مسابقات وتحديات المزهر الآن!')); }
     else { db.ref('students').once('value',snap=>{ snap.forEach(c=>{ const s=c.val(); notifyStudent(s.group,s.studentNumber,'🏆 مسابقة جديدة: '+title,'انضم وارفع مشاركتك الآن!'); }); }); }
     showToast('✅ أُنشئت مسابقة جديدة');
     broadcastAnnounce({kind:'reg',compId:ref.key,title,at:Date.now()});
@@ -1337,12 +1481,12 @@ function renderCompHTML(body,c){
             '<button class="btn btn-primary btn-sm mt-1" onclick="dismissRoundNotice(\''+escapeHtml(rk)+'\')">فهمت ✓</button></div>';
         }
     }
-    if(currentUser.role!=='teacher')html+=guidanceBar(c);
+    if(!isAdmin())html+=guidanceBar(c);
     let grid='<div class="mgrid">';
     grid+='<div class="glass card mgrid-card"><div class="section-title">📝 مشاركتك <div class="spacer"></div><span class="badge">👥 '+(c.participants?Object.keys(c.participants).length:0)+' متسابق</span></div><div class="card-body"><div class="actions-row">'+mySubmitArea(c)+'</div><div class="text-white-50" style="font-size:.78rem;margin-top:6px">قائمة المشاركين تظهر من الصفحة الرئيسية</div></div></div>';
     grid+='<div class="glass card mgrid-card"><div class="section-title">⚔️ المواجهات</div><div class="card-body"><div id="matchList"></div></div></div>';
     html+=grid+'</div>';
-    if(currentUser.role==='teacher')html+=judgesPanelHTML(c);
+    if(isAdmin())html+=judgesPanelHTML(c);
     html+=teacherPanelHTML(c);
     body.innerHTML=html;
     renderMatches(c);
@@ -1396,7 +1540,7 @@ function renderParticipants(c,containerId){
         const p=parts[k];
         const row=document.createElement('div'); row.className='part-row';
         let actions='';
-        if(currentUser.role==='teacher'){
+        if(isAdmin()){
             actions='<div class="actions-row" style="flex-wrap:nowrap">'+
             '<button class="btn btn-secondary btn-xs" onclick="event.stopPropagation();editParticipantMedia(\''+escapeHtml(c.id)+'\',\''+escapeHtml(k)+'\')">✏️</button>'+
             '<button class="btn btn-danger btn-xs" onclick="event.stopPropagation();removeParticipant(\''+escapeHtml(c.id)+'\',\''+escapeHtml(k)+'\')">🗑️</button></div>';
@@ -1437,7 +1581,7 @@ function roundVotingOpen(c){
     return false;
 }
 function canSeeMedia(c,sn){
-    if(currentUser.role==='teacher'||currentUser.role==='judge')return true;
+    if(isAdmin()||currentUser.role==='judge')return true;
     if(sn===currentUser.studentNumber)return true;
     if(roundVotingOpen(c))return true;
     return false;
@@ -1504,7 +1648,7 @@ function renderMatches(c){
     box.innerHTML='';
     const rounds=c.rounds||{};
     let any=false;
-    const isStaff=currentUser.role==='teacher'||currentUser.role==='judge';
+    const isStaff=isAdmin()||currentUser.role==='judge';
     const keys=Object.keys(rounds).sort((a,b)=>Number(a)-Number(b));
     let tint=0;
     if(!isStaff&&c.status==='running'){
@@ -1554,7 +1698,7 @@ function matchCard(c,rn,mid,m,roundMatchCount){
             '<button class="btn btn-fire btn-xs" onclick="event.stopPropagation();routeView=\'vote\';renderNav();renderRoute()">🗳️ اذهب للتصويت</button>':
             '<div class="text-white-50" style="font-size:.78rem">🔒 التصويت من تبويب «صوّت» — يفتحه المعلم</div>')+'</div>';
         }
-        if(currentUser.role==='teacher'){
+        if(isAdmin()){
             sub+='<div class="mt-2 actions-row">'+
             '<button class="btn btn-secondary btn-xs" onclick="manualDecide(\''+escapeHtml(c.id)+'\',\''+escapeHtml(rn)+'\',\''+escapeHtml(mid)+'\',\'a\')">🏅 فوز: '+escapeHtml(currentStudentsFullName(c,(m.a||{}).sn))+'</button>'+
             '<button class="btn btn-secondary btn-xs" onclick="manualDecide(\''+escapeHtml(c.id)+'\',\''+escapeHtml(rn)+'\',\''+escapeHtml(mid)+'\',\'b\')">🏅 فوز: '+escapeHtml(currentStudentsFullName(c,(m.b||{}).sn))+'</button>'+
@@ -1608,7 +1752,11 @@ function battleCTA(c,rn,mid,m){
 }
 function countVotes(m){
     let a=0,b=0;
-    if(m&&m.votes)Object.keys(m.votes).forEach(k=>{ if(m.votes[k]==='b')b++; else a++; });
+    if(m&&m.votes)Object.keys(m.votes).forEach(k=>{
+        const side=m.votes[k];
+        const w=voteWeights[roleFromVoterKey(k)]||1;
+        if(side==='b')b+=w; else a+=w;
+    });
     return {a,b};
 }
 function voteRow(c,rn,mid,m){
@@ -1627,7 +1775,7 @@ function voteRow(c,rn,mid,m){
         controls='<div class="text-white-50" style="font-size:.8rem;margin-top:6px">🔒 التصويت مغلق — يفتحه المعلم</div>';
     }
     let row='<div class="vote-row">'+controls+'</div>';
-    const isStaff=currentUser.role==='teacher'||currentUser.role==='judge';
+    const isStaff=isAdmin()||currentUser.role==='judge';
     if(Object.keys(m.votes||{}).length)row+='<div class="vote-count">🗳️ '+cc.a+' : '+cc.b+' صوتًا</div>';
     return row;
 }
@@ -1890,18 +2038,18 @@ async function declareChampion(compId,c,sn){
         at:Date.now()
     };
     await db.ref('communityComps/'+compId).update({status:'finished',champion:champ,roundNotice:null});
-    notifyStudent(champ.group,sn,'🏆 مبروك! فزت في مسابقة «'+(c.title||'')+'»','من مجتمع المزهر — أنت البطل 🥇');
+    notifyStudent(champ.group,sn,'🏆 مبروك! فزت في مسابقة «'+(c.title||'')+'»','من مسابقات وتحديات المزهر — أنت البطل 🥇');
     const aref=broadcastAnnounce({kind:'champ',forAllUsers:true,compId,title:c.title||'مسابقة',champ:{name:champ.name,photo:champ.photo,group:champ.group,media:champ.media},at:Date.now()});
     if(aref&&aref.key)localStorage.setItem('ann_seen_'+aref.key,'1');
     celebrateChampion(champ.name,c.title,champ);
 }
 // ===== judge panel =====
 function judgesPanelHTML(c){
-    if(currentUser.role!=='teacher')return '';
+    if(!isAdmin())return '';
     return '<div class="glass card"><div class="section-title">⚖️ المحكمون <div class="spacer"></div><button class="btn btn-success btn-sm" onclick="addJudge()">➕ محكم</button></div><div id="judgeList"><span class="text-white-50">تحميل...</span></div></div>';
 }
 function initJudges(c){
-    if(currentUser.role!=='teacher')return;
+    if(!isAdmin())return;
     if(judgeListFired)return; judgeListFired=true;
     db.ref('communityJudges').on('value',snap=>{
         const box=document.getElementById('judgeList'); if(!box)return;
@@ -1918,7 +2066,7 @@ function initJudges(c){
 }
 // ===== teacher controls =====
 function teacherPanelHTML(c){
-    if(currentUser.role!=='teacher')return '';
+    if(!isAdmin())return '';
     let h='<div class="glass card mgrid-card"><div class="section-title">🎛️ لوحة تحكم المعلم</div>';
     if(c.status==='open'){
         h+='<div class="card-body"><div class="actions-row">'+
@@ -2180,7 +2328,7 @@ function deleteMyPart(compId){
 async function submitNewSubmission(){
     msgHide('nsMsg');
     if(!_nsComp){ return; }
-    if(_nsBehalf){ if(currentUser.role!=='teacher'){ msg('nsMsg','❌ غير مسموح','error'); return; } }
+    if(_nsBehalf){ if(!isAdmin()){ msg('nsMsg','❌ غير مسموح','error'); return; } }
     else if(!currentUser||currentUser.role!=='student'){ msg('nsMsg','❌ المشاركة متاحة للطلاب فقط','error'); return; }
     const type=document.getElementById('nsMediaType').value;
     let media=null;
@@ -2201,7 +2349,17 @@ async function submitNewSubmission(){
         if(cf){ msg('nsMsg','⏳ رفع صورة الغلاف...','info'); try{ cover=await uploadImage(cf); }catch(e){ msg('nsMsg','⚠️ فشل رفع الغلاف (نكمل بدونها)','error'); } }
         media={type:'link',url,cover};
     }else if(type==='video'){
-        msg('nsMsg','❌ رفع الفيديو المباشر غير متاح بعد — استخدم الرابط','error'); return;
+        const f=document.getElementById('nsVideoFile').files[0];
+        if(!f){ msg('nsMsg','❌ اختر ملف فيديو','error'); return; }
+        let dur=0;
+        try{ dur=await readVideoDuration(f,3000); }catch(e){ dur=0; }
+        if(videoMaxSec>0&&dur>videoMaxSec){
+            msg('nsMsg','⏱️ مدة الفيديو '+formatDur(dur)+' تتجاوز الحد المسموح ('+formatDur(videoMaxSec)+')','error');
+            return;
+        }
+        msg('nsMsg','⏳ رفع الفيديو إلى السحابة (قد يستغرق دقيقة)...','info');
+        try{ const url=await uploadVideo(f); media={type:'video',url}; }
+        catch(e){ msg('nsMsg','❌ فشل رفع الفيديو: '+(e.message||e),'error'); return; }
     }
     const sn=_nsBehalf?_nsBehalf.sn:currentUser.studentNumber;
     const name=_nsBehalf?_nsBehalf.name:currentUser.name;
@@ -2229,7 +2387,7 @@ function nsMediaChanged(type){
     }else if(type==='link'){
         pre.innerHTML='<span class="text-white-50">🔗 أدخل الرابط واختر صورة الغلاف (اختياري)</span>';
     }else{
-        pre.innerHTML='<span class="text-white-50">🎬 رفع الفيديو سيتوفر لاحقاً</span>';
+        pre.innerHTML='<span class="text-white-50">🎬 اختر ملف الفيديو وسيُرفع مباشرة عند الإرسال</span>';
     }
 }
 // ===== boot =====
