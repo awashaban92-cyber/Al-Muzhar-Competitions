@@ -437,6 +437,8 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const IMGBB_KEY = '415fe70a5d028be494857f8c7a7c6807';
+const DRIVE_WEBAPP='https://script.google.com/macros/s/AKfycbywTc7NvtD71V0FkWdmIukBtB4KdcfvDywMifLPTXt1TwDpe-b7nLDLiSGeqkZKkVyG/exec';
+const DRIVE_SECRET='المزهر2026';
 let currentUser = null;
 let loginRole = 'teacher';
 let routeView = 'home';
@@ -652,18 +654,18 @@ function uploadImage(file){
 }
 function uploadVideo(file){
     return new Promise((res,rej)=>{
-        const fd=new FormData();
-        fd.append('reqtype','fileupload');
-        fd.append('userhash','');
-        fd.append('fileToUpload',file);
-        fetch('https://catbox.moe/user/api.php',{method:'POST',body:fd})
-            .then(r=>r.text())
-            .then(t=>{
-                const t2=(t||'').trim();
-                if(t2&&t2.indexOf('http')===0)res(t2);
-                else rej(t2||'فشل رفع الفيديو');
-            })
-            .catch(e=>rej(e));
+        const rd=new FileReader();
+        rd.onerror=()=>rej(new Error('تعذّر قراءة الفيديو'));
+        rd.onload=function(){
+            const b64=String(rd.result).split(',')[1]||'';
+            fetch(DRIVE_WEBAPP,{
+                method:'POST',
+                redirect:'follow',
+                headers:{'Content-Type':'text/plain;charset=utf-8'},
+                body:JSON.stringify({token:DRIVE_SECRET,name:file.name||'video.mp4',mime:file.type||'video/mp4',data:b64})
+            }).then(r=>r.json()).then(d=>d&&d.url?res(d.url):rej(new Error((d&&d.error)||'فشل رفع الفيديو'))).catch(rej);
+        };
+        rd.readAsDataURL(file);
     });
 }
 function readVideoDuration(file,limitSec){
@@ -680,6 +682,37 @@ function readVideoDuration(file,limitSec){
         v.onerror=function(){ URL.revokeObjectURL(url); done=true; rej(new Error('تعذّر قراءة الفيديو')); };
         v.src=url;
         setTimeout(function(){ if(!done){ URL.revokeObjectURL(url); rej(new Error('مهلة قراءة الفيديو')); } }, 8000);
+    });
+}
+function captureVideoCover(file, maxW){
+    return new Promise((res)=>{
+        if(!file||typeof HTMLVideoElement==='undefined'){ res(null); return; }
+        const url=URL.createObjectURL(file);
+        const v=document.createElement('video');
+        v.muted=true; v.playsInline=true; v.preload='auto'; v.src=url;
+        let done=false;
+        function fail(){ if(done)return; done=true; URL.revokeObjectURL(url); v.removeAttribute('src'); try{v.load();}catch(e){} res(null); }
+        function finish(c){
+            if(done)return; done=true; URL.revokeObjectURL(url); v.removeAttribute('src'); try{v.load();}catch(e){}
+            if(!c){ res(null); return; }
+            try{ c.toBlob(function(b){ res(b); }, 'image/jpeg', 0.72); }
+            catch(e){ try{ res(c.toDataURL('image/jpeg',0.72)); }catch(e2){ res(null); } }
+        }
+        v.onloadedmetadata=function(){
+            try{ const dur=(v.duration&&isFinite(v.duration))?v.duration:0; v.currentTime=Math.max(0.1,Math.min(1,dur/2)); }catch(e){}
+        };
+        v.onseeked=function(){
+            if(done)return;
+            try{
+                const w=Math.min(maxW||400, v.videoWidth||400);
+                const h=Math.max(1, Math.round(w*((v.videoHeight||w)/(v.videoWidth||w||w))));
+                const c=document.createElement('canvas'); c.width=w; c.height=h;
+                c.getContext('2d').drawImage(v,0,0,w,h);
+                finish(c);
+            }catch(e){ finish(null); }
+        };
+        v.onerror=fail;
+        setTimeout(function(){ if(!done) finish(null); }, 8000);
     });
 }
 function previewVideoDuration(){
@@ -699,6 +732,89 @@ function fmtSize(b){
     if(!b&&b!==0)return '';
     if(b/(1024*1024)>=1)return (b/1024/1024).toFixed(1)+' MB';
     return Math.max(1,Math.round(b/1024))+' KB';
+}
+var MAX_VIDEO_SIZE=32*1024*1024;
+function pickVideoMime(){
+    const cands=['video/mp4','video/webm;codecs=vp8,opus','video/webm;codecs=vp9,opus','video/webm'];
+    if(typeof MediaRecorder==='undefined'||!MediaRecorder.isTypeSupported)return null;
+    for(let i=0;i<cands.length;i++){ if(MediaRecorder.isTypeSupported(cands[i]))return cands[i]; }
+    return null;
+}
+function encodeVideo(file, bitsPerSec){
+    return new Promise((res,rej)=>{
+        const mime=pickVideoMime();
+        if(!mime||typeof HTMLVideoElement==='undefined'||!document.createElement('video').captureStream){
+            rej(new Error('UNSUPPORTED')); return;
+        }
+        const url=URL.createObjectURL(file);
+        const v=document.createElement('video');
+        v.muted=true; v.playsInline=true; v.preload='auto'; v.src=url; v.autoplay=true;
+        const timer=setTimeout(()=>{ cleanup(); rej(new Error('مهلة الضغط')); }, 15*60*1000);
+        let stream=null,rec=null,chunks=[],done=false;
+        function cleanup(){
+            clearTimeout(timer);
+            if(rec&&rec.state!=='inactive'){ try{rec.stop();}catch(e){} }
+            if(stream){ stream.getTracks().forEach(t=>t.stop()); }
+            URL.revokeObjectURL(url);
+        }
+        v.onerror=function(){ if(!done){ done=true; cleanup(); rej(new Error('تعذّر تشغيل الفيديو')); } };
+        v.onloadedmetadata=function(){
+            if(done)return;
+            try{
+                stream=v.captureStream();
+                const opts={ mimeType:mime, videoBitsPerSecond:Math.max(200000,bitsPerSec) };
+                rec=new MediaRecorder(stream,opts);
+                rec.ondataavailable=e=>{ if(e&&e.data&&e.data.size)chunks.push(e.data); };
+                rec.onstop=function(){
+                    if(done)return;
+                    done=true; clearTimeout(timer);
+                    const ext=(mime.indexOf('mp4')>=0)?'mp4':'webm';
+                    const blob=new Blob(chunks,{type:mime.split(';')[0]});
+                    stream.getTracks().forEach(t=>t.stop());
+                    URL.revokeObjectURL(url);
+                    if(blob.size>0)res({blob:blob,ext:ext,size:blob.size});
+                    else rej(new Error('فشل الضغط — ناتج فارغ'));
+                };
+                rec.onerror=function(){ if(!done){ done=true; cleanup(); rej(new Error('خطأ في الترميز')); } };
+                rec.start(1000);
+                v.play().catch(()=>{ if(!done){ done=true; cleanup(); rej(new Error('تعذّر التشغيل')); } });
+            }catch(e){ if(!done){ done=true; cleanup(); rej(e); } }
+        };
+        setTimeout(function(){ if(!done&&rec&&rec.state!=='inactive'&&v.duration&&v.currentTime>=v.duration-0.2)stop(); }, 1000);
+        function stop(){ if(done)return; if(rec&&rec.state!=='inactive')rec.stop(); }
+        v.addEventListener('ended',function(){ stop(); });
+    });
+}
+function fitVideoForUpload(file){
+    return new Promise(async (res,rej)=>{
+        if(file.size<=MAX_VIDEO_SIZE){ res({blob:file,ext:file.name.split('.').pop()||'mp4',size:file.size}); return; }
+        if(typeof MediaRecorder==='undefined'||!document.createElement('video').captureStream){
+            if(file.size>MAX_VIDEO_SIZE+10*1024*1024){ rej(new Error('الضغط غير مدعوم على هذا الجهاز')); return; }
+            res({blob:file,ext:file.name.split('.').pop()||'mp4',size:file.size}); return;
+        }
+        let dur=0;
+        try{ dur=await readVideoDuration(file,0); }catch(e){ dur=0; }
+        if(!(dur>0)||!isFinite(dur)){ res({blob:file,ext:file.name.split('.').pop()||'mp4',size:file.size}); return; }
+        const targetBytes=MAX_VIDEO_SIZE;
+        let totalBits=(targetBytes*8)/dur;
+        const audioBudget=128*1024;
+        let videoBits=Math.max(200000,totalBits-audioBudget);
+        let last=null;
+        for(let i=0;i<3;i++){
+            try{
+                const out=await encodeVideo(file,videoBits);
+                last=out;
+                if(out.size<=MAX_VIDEO_SIZE)break;
+                videoBits=Math.round(videoBits*0.7);
+            }catch(e){
+                if(e.message==='UNSUPPORTED'){ if(file.size>MAX_VIDEO_SIZE+10*1024*1024)rej(new Error('الضغط غير مدعوم على هذا الجهاز')); else res({blob:file,ext:file.name.split('.').pop()||'mp4',size:file.size}); return; }
+                if(!last)last=null;
+                break;
+            }
+        }
+        if(last)res(last);
+        else res({blob:file,ext:file.name.split('.').pop()||'mp4',size:file.size});
+    });
 }
 function fixAudioDataUri(uri){
     if(typeof uri!=='string'||!uri||uri.indexOf('data:')!==0)return uri;
@@ -1554,12 +1670,54 @@ function renderParticipants(c,containerId){
     attachMediaSlots();
 }
 // ===== media render =====
+function renderPlayer(url, cover){
+    let u=(url||'').trim();
+    if(!u)return '<span class="text-white-50">—</span>';
+    let id='';
+    if(u.indexOf('drive.google.com')>=0||u.indexOf('drive.usercontent.google.com')>=0){
+        const m1=u.match(/\/file\/d\/([^/?#]+)/); if(m1)id=m1[1];
+        if(!id){ const m2=u.match(/[?&]id=([^&]+)/); if(m2)id=m2[1]; }
+        if(!id)return '<a class="media-link" href="'+escapeHtml(u)+'" target="_blank" rel="noopener">🔗 فتح الفيديو</a>';
+        u='https://drive.google.com/file/d/'+encodeURIComponent(id)+'/preview';
+    }
+    const thumb=cover||(id?'https://drive.google.com/thumbnail?id='+encodeURIComponent(id)+'&sz=w800':'');
+    return '<div class="vid-thumb" data-vplay="'+escapeHtml(u)+'" data-vposter="'+escapeHtml(thumb)+'" style="position:relative;width:100%;max-width:460px;cursor:pointer;border-radius:12px;overflow:hidden;aspect-ratio:16/9;background:#000">'+
+        (thumb?'<img src="'+escapeHtml(thumb)+'" alt="thumbnail" style="width:100%;height:100%;object-fit:cover;display:block" />':'')+
+        '<span style="position:absolute;inset:0;margin:auto;width:64px;height:64px;border-radius:50%;background:rgba(255,63,52,.85);display:flex;align-items:center;justify-content:center;font-size:26px;color:#fff;box-shadow:0 4px 18px rgba(0,0,0,.45)">▶</span>'+
+        '</div>';
+}
+function openVideoModal(src, poster){
+    const o=document.createElement('div'); o.className='modal-overlay';
+    const isDrive=(src.indexOf('drive.google.com')>=0||src.indexOf('drive.usercontent.google.com')>=0);
+    if(isDrive){
+        o.innerHTML='<div class="modal-box" style="text-align:center;max-width:820px">'+
+            '<div style="position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:14px;overflow:hidden">'+
+            '<iframe src="'+escapeHtml(src)+'" allow="autoplay; fullscreen; encrypted-media" allowfullscreen style="position:absolute;inset:0;width:100%;height:100%;border:0" title="مشغل الفيديو"></iframe></div>'+
+            '<button class="btn btn-secondary btn-sm mt-2">✕ إغلاق</button></div>';
+    }else{
+        o.innerHTML='<div class="modal-box" style="text-align:center;max-width:780px">'+
+            '<video controls autoplay playsinline style="width:100%;max-height:70vh;border-radius:14px;background:#000" src="'+escapeHtml(src)+'"'+(poster?' poster="'+escapeHtml(poster)+'"':'')+'></video>'+
+            '<button class="btn btn-secondary btn-sm mt-2">✕ إغلاق</button></div>';
+    }
+    const close=function(){ o.remove(); };
+    o.querySelector('button').onclick=close;
+    o.onclick=function(e){ if(e.target===o)close(); };
+    document.body.appendChild(o);
+    const v=o.querySelector('video');
+    if(v){ try{ var pr=v.play(); if(pr&&pr.catch)pr.catch(function(){}); }catch(e){} }
+}
 function singleMedia(m){
     if(!m)return '<span class="text-white-50">بدون محتوى</span>';
     if(m.type==='image'&&m.url)return '<img class="media-thumb" data-img="'+escapeHtml(m.url)+'" src="'+escapeHtml(m.url)+'" />';
     if(m.type==='audio'&&m.audio)return '<div data-audio="'+escapeHtml(m.audio)+'" style="min-width:150px"></div>';
-    if(m.type==='link')return '<a class="media-link" href="#" onclick="openExternal(\''+escapeHtml((m.url||'').replace(/'/g,"\\'"))+'\');return false;">🔗 فتح الرابط</a>'+(m.cover?'<div class="mt-1"><img class="media-thumb" data-img="'+escapeHtml(m.cover)+'" src="'+escapeHtml(m.cover)+'" /></div>':'');
-    if(m.type==='video'&&m.url)return '<video class="media-thumb" controls><source src="'+escapeHtml(m.url)+'" /></video>';
+    if(m.type==='link'){
+        const lu=(m.url||'').trim();
+        if(lu&&(lu.indexOf('drive.google.com')>=0||lu.indexOf('drive.usercontent.google.com')>=0||/\.(mp4|webm|mov|m4v)(\?|$)/i.test(lu))){
+            return renderPlayer(lu, m.cover);
+        }
+        return '<a class="media-link" href="#" onclick="openExternal(\''+escapeHtml((m.url||'').replace(/'/g,"\\'"))+'\');return false;">🔗 فتح الرابط</a>'+(m.cover?'<div class="mt-1"><img class="media-thumb" data-img="'+escapeHtml(m.cover)+'" src="'+escapeHtml(m.cover)+'" /></div>':'');
+    }
+    if(m.type==='video'&&m.url)return renderPlayer(m.url, m.cover);
     return '<span class="text-white-50">—</span>';
 }
 function partMedia(p){
@@ -1606,6 +1764,10 @@ function attachMediaSlots(){
         const src=el.getAttribute('data-link'); el.removeAttribute('data-link');
         el.onclick=e=>{ e.stopPropagation(); openExternal(src); };
     });
+    document.querySelectorAll('[data-vplay]').forEach(el=>{
+        const src=el.getAttribute('data-vplay'); const pst=el.getAttribute('data-vposter')||''; el.removeAttribute('data-vplay');
+        el.onclick=e=>{ e.stopPropagation(); openVideoModal(src, pst); };
+    });
 }
 function showLightbox(url){
     const o=document.createElement('div'); o.className='modal-overlay';
@@ -1620,8 +1782,14 @@ function champMedia(ch){
     const wrap='<div style="max-width:300px;margin:10px auto 0">';
     if(m.type==='image'&&m.url)return wrap+'<img data-img="'+escapeHtml(m.url)+'" src="'+escapeHtml(m.url)+'" style="width:100%;height:auto;border-radius:14px;border:1px solid rgba(255,210,63,.35);cursor:pointer" /></div>';
     if(m.type==='audio'&&m.audio)return wrap+'<div data-audio="'+escapeHtml(m.audio)+'"></div></div>';
-    if(m.type==='link'&&m.url)return wrap+'<button class="btn btn-amber btn-sm" onclick="event.stopPropagation();openExternal(\''+escapeHtml(m.url.replace(/'/g,"\\'"))+'\')">🔗 فتح وسيلة البطل</button>'+(m.cover?'<div class="mt-1"><img data-img="'+escapeHtml(m.cover)+'" src="'+escapeHtml(m.cover)+'" style="width:100%;height:auto;border-radius:14px;cursor:pointer" /></div>':'')+'</div>';
-    if(m.type==='video'&&m.url)return wrap+'<video controls style="width:100%;border-radius:14px"><source src="'+escapeHtml(m.url)+'" /></video></div>';
+    if(m.type==='link'&&m.url){
+        const lu=(m.url||'').trim();
+        if(lu.indexOf('drive.google.com')>=0||lu.indexOf('drive.usercontent.google.com')>=0||/\.(mp4|webm|mov|m4v)(\?|$)/i.test(lu)){
+            return wrap+renderPlayer(lu, m.cover)+'</div>';
+        }
+        return wrap+'<button class="btn btn-amber btn-sm" onclick="event.stopPropagation();openExternal(\''+escapeHtml(m.url.replace(/'/g,"\\'"))+'\')">🔗 فتح وسيلة البطل</button>'+(m.cover?'<div class="mt-1"><img data-img="'+escapeHtml(m.cover)+'" src="'+escapeHtml(m.cover)+'" style="width:100%;height:auto;border-radius:14px;cursor:pointer" /></div>':'')+'</div>';
+    }
+    if(m.type==='video'&&m.url)return wrap+renderPlayer(m.url, m.cover)+'</div>';
     return '';
 }
 // ===== matches & voting =====
@@ -2357,9 +2525,37 @@ async function submitNewSubmission(){
             msg('nsMsg','⏱️ مدة الفيديو '+formatDur(dur)+' تتجاوز الحد المسموح ('+formatDur(videoMaxSec)+')','error');
             return;
         }
-        msg('nsMsg','⏳ رفع الفيديو إلى السحابة (قد يستغرق دقيقة)...','info');
-        try{ const url=await uploadVideo(f); media={type:'video',url}; }
+        let useFile=f, useExt=null;
+        if(f.size>MAX_VIDEO_SIZE){
+            msg('nsMsg','⏳ الفيديو كبير — جارٍ ضغطه ليتناسب (قد يستغرق ما يعادل مدة الفيديو)...','info');
+            try{
+                const fit=await fitVideoForUpload(f);
+                useFile=fit.blob; useExt=fit.ext;
+            }catch(e){
+                msg('nsMsg','❌ '+((e&&e.message)||e),'error'); return;
+            }
+            if(useExt&&useExt!=='mp4'&&useExt!=='webm')useExt='mp4';
+        }
+        if(typeof File==='undefined'||!(useFile instanceof File)){
+            try{ useFile=new File([useFile],'vid'+(Date.now())+'.'+(useExt||'mp4'),{type:useExt==='webm'?'video/webm':'video/mp4'}); }catch(e){}
+        }
+        msg('nsMsg','⏳ تجهيز صورة مصغرة للفيديو...','info');
+        let cover=null;
+        try{ const cb=await captureVideoCover(useFile,420); if(cb){ cover=await uploadImage(cb); } }catch(e){}
+        msg('nsMsg','⏳ رفع الفيديو إلى درايف (قد يستغرق دقيقة)...','info');
+        let url=null;
+        try{ url=await uploadVideo(useFile); }
         catch(e){ msg('nsMsg','❌ فشل رفع الفيديو: '+(e.message||e),'error'); return; }
+        media={type:'video',url};
+        if(cover)media.cover=cover;
+        else{
+            let fid='';
+            if(url.indexOf('drive.google.com')>=0||url.indexOf('drive.usercontent.google.com')>=0){
+                const m1=url.match(/\/file\/d\/([^/?#]+)/); if(m1)fid=m1[1];
+                if(!fid){ const m2=url.match(/[?&]id=([^&]+)/); if(m2)fid=m2[1]; }
+            }
+            if(fid)media.cover='https://drive.google.com/thumbnail?id='+encodeURIComponent(fid)+'&sz=w800';
+        }
     }
     const sn=_nsBehalf?_nsBehalf.sn:currentUser.studentNumber;
     const name=_nsBehalf?_nsBehalf.name:currentUser.name;
