@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>🔧 ترحيل مفاتيح المشاركين — مسابقات وتحديات المزهر</title>
+<style>
+:root{
+    --bg1:#0b0e1a; --bg2:#1c1040; --bg3:#2a0f3d;
+    --txt:#f2f4ff; --muted:rgba(255,255,255,.6);
+    --acc:#ff5630; --gold:#ffd23f; --green:#35c56f;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+    font-family:'Segoe UI',Tahoma,sans-serif;color:var(--txt);min-height:100vh;direction:rtl;
+    background:radial-gradient(1200px 800px at 85% -10%,rgba(124,58,237,.35),transparent 60%),
+               linear-gradient(160deg,var(--bg1) 0%,var(--bg2) 55%,var(--bg3) 100%);
+}
+.wrap{max-width:760px;margin:0 auto;padding:24px 16px}
+.card{background:rgba(20,16,46,.82);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:22px;margin-bottom:16px;box-shadow:0 14px 50px rgba(0,0,0,.45)}
+h1{font-size:1.4rem;margin-bottom:6px;color:#fff}
+p{color:var(--muted);font-size:.9rem;line-height:1.8;margin-bottom:10px}
+.note{border:1px solid rgba(255,210,63,.45);border-radius:12px;padding:12px 14px;background:rgba(255,210,63,.1);font-size:.85rem;margin-bottom:12px;line-height:1.7}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:none;border-radius:12px;padding:13px 22px;font-size:.95rem;font-weight:800;cursor:pointer;color:#fff;font-family:inherit;transition:all .2s}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn-run{background:linear-gradient(135deg,#ff5630,#ff7a3c);box-shadow:0 8px 22px rgba(255,86,48,.35)}
+.btn-sec{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14)}
+#log{font-family:Consolas,monospace;font-size:.8rem;direction:ltr;text-align:left;background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:14px;max-height:340px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;margin-top:14px}
+#log div{margin:2px 0;line-height:1.5}
+.ok{color:var(--green)}.warn{color:var(--gold)}.err{color:#ff8a80}.info{color:#7ad3ff}
+.summary{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+.s-tile{flex:1;min-width:120px;text-align:center;padding:12px;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1)}
+.s-tile .n{font-size:1.4rem;font-weight:900;color:var(--gold)}
+.s-tile .l{font-size:.72rem;color:var(--muted);font-weight:700;margin-top:2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+    <div class="card">
+        <h1>🔧 ترحيل مفاتيح المشاركين — لمرة واحدة</h1>
+        <p>هذه الصفحة تعيد كتابة مفاتيح المشاركين في قاعدة بيانات المسابقات من <b>الرقم فقط</b> إلى المفتاح المركّب <b style="color:var(--gold)">المجموعة__الرقم</b>، لإصلاح تداخل الصور والمشاركات بين الطلاب من مجموعات مختلفة.</p>
+        <div class="note">
+            ✅ لا تغيّر بيانات الطلاب ولا الأرقام ولا كلمات المرور.<br>
+            ✅ آمنة لإعادة التشغيل (تتخطى المسابقات المنقولة مسبقاً).<br>
+            ⚠️ تأكد من وجود اتصال بالإنترنت، واترك الصفحة مفتوحة حتى يظهر الملخص النهائي.
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn btn-run" id="runBtn" onclick="runMigration()">▶️ بدء الترحيل</button>
+            <button class="btn btn-sec" onclick="clearLog()">🗑️ مسح السجل</button>
+        </div>
+        <div id="log"></div>
+        <div id="summary" class="summary" style="display:none"></div>
+    </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+<script>
+const firebaseConfig = {
+    apiKey: "AIzaSyCJtUZmfJwLTXQ9vI9o_r7uUW0McsFXUZI",
+    authDomain: "almozher-arabic-app.firebaseapp.com",
+    databaseURL: "https://almozher-arabic-app-default-rtdb.firebaseio.com",
+    projectId: "almozher-arabic-app",
+    storageBucket: "almozher-arabic-app.appspot.com"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+const logEl = document.getElementById('log');
+function log(msg, cls){
+    const d = document.createElement('div');
+    d.className = cls || 'info';
+    d.textContent = msg;
+    logEl.appendChild(d);
+    logEl.scrollTop = logEl.scrollHeight;
+}
+function clearLog(){ logEl.innerHTML = ''; document.getElementById('summary').style.display='none'; }
+
+function isNumericKey(k){ return /^\d+$/.test(String(k)); }
+function isCompositeKey(k){ return String(k).indexOf('__') !== -1; }
+function clone(o){ return JSON.parse(JSON.stringify(o)); }
+
+async function runMigration(){
+    const btn = document.getElementById('runBtn');
+    btn.disabled = true;
+    clearLog();
+    log('⏳ جارٍ قراءة قاعدة البيانات...','info');
+
+    let total=0, migrated=0, already=0, skipped=0, movedParts=0, movedMatches=0;
+    const warnings = [];
+
+    try {
+        const snap = await db.ref('communityComps').once('value');
+        if(!snap.exists()){
+            log('ℹ️ لا توجد مسابقات في القاعدة.','warn');
+            showSummary(0,0,0,0);
+            return;
+        }
+        const comps = [];
+        snap.forEach(child => { comps.push({ id: child.key, c: child.val() || {} }); });
+
+        for(const { id: compId, c } of comps){
+            total++;
+            log('🔹 المسابقة: ' + (c.title || compId),'info');
+
+            const parts = c.participants || {};
+            const oldKeys = Object.keys(parts);
+            if(!oldKeys.length){
+                log('   └─ لا يوجد مشاركون — تُتخطّى.','warn');
+                skipped++;
+                continue;
+            }
+
+            // هل هناك مفاتيح رقمية تحتاج تحويلاً؟
+            const numeric = oldKeys.filter(isNumericKey);
+            if(!numeric.length){
+                log('   └─ المفاتيح منقولة مسبقاً (لا مفاتيح رقمية) — تُتخطّى.','warn');
+                already++;
+                continue;
+            }
+
+            // بناء خريطة التحويل + المشاركون الجدد
+            const mapping = {};      // oldKey -> newKey
+            const newParts = {};
+            let pendingGroup = false;
+            oldKeys.forEach(k => {
+                const v = parts[k] || {};
+                if(isCompositeKey(k)){
+                    newParts[k] = v;          // منقول سابقاً، يُحفظ كما هو
+                    return;
+                }
+                const grp = (v && v.group) || '';
+                if(!grp){
+                    // لا نعرف المجموعة → لا يمكن بناء مفتاح مركّب؛ نحافظ على المفتاح وننبه
+                    newParts[k] = v;
+                    pendingGroup = true;
+                    warnings.push('المسابقة «'+(c.title||compId)+'»: مشارك بمفتاح «'+k+'» بدون مجموعة — أُبقي كما هو');
+                    return;
+                }
+                const nk = grp + '__' + k;
+                mapping[k] = nk;
+                newParts[nk] = v;
+            });
+
+            // إعادة كتابة الجولات (rounds)
+            let roundsChanged = false;
+            const rounds = clone(c.rounds || {});
+            Object.keys(rounds).forEach(rn => {
+                const r = rounds[rn];
+                Object.keys(r).forEach(mid => {
+                    const m = r[mid];
+                    if(!m) return;
+                    ['a','b'].forEach(side => {
+                        const o = m[side];
+                        if(o && o.sn && mapping[o.sn]){
+                            o.sn = mapping[o.sn];
+                            roundsChanged = true;
+                        }
+                    });
+                });
+            });
+
+            // إعادة كتابة البطل
+            let champChanged = false;
+            const champion = c.champion ? clone(c.champion) : null;
+            if(champion && champion.sn && mapping[champion.sn]){
+                champion.sn = mapping[champion.sn];
+                champChanged = true;
+            }
+
+            const update = { participants: newParts };
+            if(roundsChanged) update.rounds = rounds;
+            if(champChanged) update.champion = champion;
+            if(!roundsChanged && !champChanged && JSON.stringify(newParts) === JSON.stringify(parts)){
+                log('   └─ لا تغيير مطلوب.','warn');
+                skipped++;
+                continue;
+            }
+
+            // حفظ
+            try {
+                await db.ref('communityComps/' + compId).update(update);
+                migrated++;
+                const movedN = Object.keys(mapping).length;
+                movedParts += movedN;
+                let mm = 0;
+                Object.keys(rounds).forEach(rn => {
+                    Object.keys(rounds[rn]).forEach(mid => {
+                        const m = rounds[rn][mid];
+                        ['a','b'].forEach(side => {
+                            const o = m && m[side];
+                            if(o && o.sn && String(o.sn).indexOf('__') !== -1) mm++;
+                        });
+                    });
+                });
+                movedMatches += mm;
+                log('   └─ ✅ نُقل '+movedN+' مشارك'+(pendingGroup?' (مع تنبيهات)':'')+(roundsChanged?' • '+mm+' مواجهة':'')+'','ok');
+            } catch(e) {
+                log('   └─ ❌ فشل حفظ: ' + (e && e.message || e),'err');
+                warnings.push('المسابقة «'+(c.title||compId)+'» فشل حفظها');
+            }
+        }
+    } catch(e) {
+        log('❌ خطأ عام: ' + (e && e.message || e),'err');
+    }
+
+    log('🏁 تمت العملية.','ok');
+    warnings.forEach(w => log('⚠️ ' + w,'warn'));
+    showSummary(total, migrated, already, movedParts);
+    btn.disabled = false;
+}
+
+function showSummary(total, migrated, already, movedParts){
+    const s = document.getElementById('summary');
+    s.style.display = 'flex';
+    s.innerHTML =
+        '<div class="s-tile"><div class="n">'+total+'</div><div class="l">المسابقات الكلية</div></div>' +
+        '<div class="s-tile"><div class="n">'+migrated+'</div><div class="l">مسابقات نُقلت</div></div>' +
+        '<div class="s-tile"><div class="n">'+already+'</div><div class="l">منقولة مسبقاً/فارغة</div></div>' +
+        '<div class="s-tile"><div class="n">'+movedParts+'</div><div class="l">مشارك نُقل</div></div>';
+}
+</script>
+</body>
+</html>
