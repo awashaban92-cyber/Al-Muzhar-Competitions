@@ -465,6 +465,18 @@ document.addEventListener('keydown',function(e){
     </div>
 </div>
 
+<!-- ===== resubmission modal ===== -->
+<div id="resubModal" class="modal-overlay hidden">
+    <div class="modal-box">
+        <h3>📤 طلب مشاركات جديدة — الجولة الحالية</h3>
+        <div class="check-line" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="resubAll" checked onchange="resubToggleAll(this.checked)" /><span>تحديد الكل</span></div>
+        <div id="resubWrap" style="max-height:38vh;overflow-y:auto"></div>
+        <button class="btn btn-primary btn-block mt-2" onclick="confirmResubmit()">✅ طلب الرفع الجديد</button>
+        <button class="btn btn-secondary btn-block mt-2" onclick="closeResubModal()">إلغاء</button>
+        <div id="resubMsg" class="msg" style="display:none"></div>
+    </div>
+</div>
+
 <!-- ===== edit comp modal ===== -->
 <div id="editCompModal" class="modal-overlay hidden">
     <div class="modal-box">
@@ -504,6 +516,7 @@ let isRecording=false, mediaRecorder=null, micStream=null, chunks=[], recAudioDa
 let compListRef=null, compRefPath=null, compRefHandle=null;
 let _nsComp=null, _nsBehalf=null;
 let _addPartComp=null, _addPartCache=[];
+let _resubCompId=null, _resubList=[];
 let _editCompId=null;
 let judgeListFired=false,judgePanelFired=false;
 let voteRef=null, celebratedMatches={};
@@ -512,6 +525,8 @@ let routeCompFrom='home';
 
 // ===== helpers =====
 function escapeHtml(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, x => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[x]); }
+// هوية المشارك: مفتاح مركّب فريد عالمياً (group__studentNumber) لتفادي تعارض الأرقام بين المجموعات
+function partId(group, num){ return (group||'')+'__'+(num==null||num===''?'?':num); }
 function showToast(t){
     const o=document.querySelector('.toast'); if(o)o.remove();
     const e=document.createElement('div'); e.className='toast'; e.textContent=t; document.body.appendChild(e);
@@ -1016,7 +1031,7 @@ async function doLogin(){
             let match=null;
             if(snap.exists())snap.forEach(c=>{ const s=c.val(); if(s.password===pwd&&s.status!=='disabled'){ s._key=c.key; match=s; } });
             if(!match){ msg('loginMsg','❌ بيانات غير صحيحة','error'); return; }
-            currentUser={role:loginRole,name:match.name,group:match.group,studentNumber:match.studentNumber,_key:match._key,phone:match.phone||'',photo:match.photo||'',password:match.password};
+            currentUser={role:loginRole,name:match.name,group:match.group,studentNumber:match.studentNumber,_key:match._key,phone:match.phone||'',photo:match.photo||'',password:match.password,_partId:partId(match.group,match.studentNumber)};
         }else if(loginRole==='judge'){
             const name=document.getElementById('loginJudgeName').value.trim();
             const secret=document.getElementById('loginJudgeSecret').value.trim();
@@ -1464,9 +1479,9 @@ function renderProfile(){
         if(snap.exists())snap.forEach(child=>{
             const c=child.val(); c.id=child.key;
             const parts=c.participants||{};
-            if(parts[currentUser.studentNumber]){
+            if(parts[currentUser._partId]){
                 any=true;
-                const p=parts[currentUser.studentNumber];
+                const p=parts[currentUser._partId];
                 const st=c.status==='open'?'<span class="badge open">مفتوحة</span>':c.status==='running'?'<span class="badge live">تُجرى</span>':'<span class="badge done">انتهت</span>';
                 html+='<div class="row-line" style="cursor:pointer" onclick="routeView=\'comp\';routeCompId=\''+c.id+'\';renderNav();renderRoute()">'+
                 '<div style="flex:1"><div class="name">'+escapeHtml(c.title||'')+'</div><div class="sub">'+(p.media?'✅ شاركت':'⏳ لم ترفع مشاركة بعد')+(p.needNew?' • 🔁 رفع جديد مطلوب':'')+'</div></div>'+st+'</div>';
@@ -1492,14 +1507,14 @@ async function uploadProfilePhoto(){
     }catch(e){ msg('pfMsg','❌ فشل رفع الصورة','error'); }
 }
 async function syncParticipantPhoto(url){
-    if(!currentUser.studentNumber)return;
+    if(!currentUser._partId)return;
     const snap=await db.ref('communityComps').once('value');
     if(!snap.exists())return;
     const upd={};
     snap.forEach(child=>{
         const c=child.val();
-        if(c.participants&&c.participants[currentUser.studentNumber]){
-            upd[child.key+'/participants/'+currentUser.studentNumber+'/photo']=url;
+        if(c.participants&&c.participants[currentUser._partId]){
+            upd[child.key+'/participants/'+currentUser._partId+'/photo']=url;
         }
     });
     if(Object.keys(upd).length)await db.ref('communityComps').update(upd);
@@ -1745,7 +1760,7 @@ function mySubmitArea(c){
     const inScope=!c.groups||!c.groups.length||c.groups.indexOf(currentUser.group)!==-1;
     if(!inScope)return '';
     if(c.status!=='open'&&!c.allowNewSubmission)return '';
-    const sn=currentUser.studentNumber;
+    const sn=currentUser._partId;
     const mine=c.participants&&c.participants[sn];
     if(c.status!=='open'){
         if(!mine||!mine.needNew)return '';
@@ -1900,7 +1915,7 @@ function roundVotingOpen(c){
 }
 function canSeeMedia(c,sn){
     if(isAdmin()||currentUser.role==='judge')return true;
-    if(sn===currentUser.studentNumber)return true;
+    if(sn===currentUser._partId)return true;
     if(roundVotingOpen(c))return true;
     return false;
 }
@@ -2422,13 +2437,23 @@ function teacherPanelHTML(c){
         '<button class="btn btn-amber btn-sm" onclick="startVoteTimer(\''+escapeHtml(c.id)+'\')">▶️ بدء المؤقت</button> '+
         '<button class="btn btn-secondary btn-sm" onclick="stopVoteTimer(\''+escapeHtml(c.id)+'\')">⏹️ إيقاف</button>'+
         '</div></div>';
-        if(c.allowNewSubmission){
-            h+='<div class="mt-1" style="padding:8px;border-radius:12px;background:rgba(255,210,63,.1);border:1px solid rgba(255,210,63,.35);font-size:.85rem">🕓 تأهل ٤ متسابقين — يرفع كل واحد مشاركة جديدة، ثم اضغط «بدء نصف النهائي».</div>';
+        if(!c.allowNewSubmission&&!roundVotingOpen(c)){
+            h+='<div class="input-group"><label class="label">📤 مشاركات جديدة — بداية الجولة</label><div class="actions-row">'+
+            '<button class="btn btn-amber btn-sm" onclick="openResubModal(\''+escapeHtml(c.id)+'\')">📤 طلب مشاركات جديدة</button>'+
+            '</div></div>';
         }
-        const roundWins=currentRoundWinners(c);
         const finalWinner=findCurrentWinner(c);
-        if(c.allowNewSubmission&&!anyUnresolved(c)){
-            h+='<button class="btn btn-amber btn-sm btn-block mt-1" onclick="gateSemifinal(\''+escapeHtml(c.id)+'\')">🎬 بدء نصف النهائي</button>';
+        if(c.allowNewSubmission){
+            const rw=currentRoundWinners(c);
+            if(rw.length===4){
+                h+='<div class="mt-1" style="padding:8px;border-radius:12px;background:rgba(255,210,63,.1);border:1px solid rgba(255,210,63,.35);font-size:.85rem">🕓 تأهل ٤ متسابقين — يرفع كل واحد مشاركة جديدة، ثم اضغط «بدء نصف النهائي».</div>';
+                if(!anyUnresolved(c)){
+                    h+='<button class="btn btn-amber btn-sm btn-block mt-1" onclick="gateSemifinal(\''+escapeHtml(c.id)+'\')">🎬 بدء نصف النهائي</button>';
+                }
+            }else{
+                h+='<div class="mt-1" style="padding:8px;border-radius:12px;background:rgba(255,210,63,.1);border:1px solid rgba(255,210,63,.35);font-size:.85rem">📤 طُلبت مشاركات جديدة — بعد رفع المتسابقين اضغط «متابعة المسابقة».</div>';
+                h+='<button class="btn btn-amber btn-sm btn-block mt-1" onclick="finishResubmit(\''+escapeHtml(c.id)+'\')">🎬 متابعة المسابقة</button>';
+            }
         }
         else if(!anyUnresolved(c)&&c.currentRound>=1&&finalWinner){
             h+='<button class="btn btn-amber btn-sm btn-block mt-1" onclick="announceChampion(\''+escapeHtml(c.id)+'\')">👑 إعلان البطل</button>';
@@ -2466,6 +2491,72 @@ async function manualAdvance(compId){
     }
     await buildNextRound(compId,c,wins);
     showToast('🔄 شُكّلت الجولة '+(c.currentRound+1));
+}
+// ===== resubmission (مشاركات جديدة لأي جولة) =====
+function roundCompetitors(c){
+    const r=c.rounds&&c.rounds[c.currentRound];
+    if(!r)return [];
+    const set={};
+    Object.keys(r).forEach(mid=>{ const m=r[mid]; ['a','b'].forEach(s=>{ const o=m&&m[s]; if(o&&o.sn&&o.sn!=='bye')set[o.sn]=1; }); });
+    return Object.keys(set);
+}
+function openResubModal(compId){
+    db.ref('communityComps/'+compId).once('value',snap=>{
+        if(!snap.exists())return;
+        const c=snap.val(); c.id=compId;
+        const sns=roundCompetitors(c);
+        if(!sns.length){ showToast('⚠️ لا يوجد متسابقون في الجولة الحالية'); return; }
+        _resubCompId=compId; _resubList=[];
+        sns.forEach(sn=>{ const p=c.participants&&c.participants[sn]; _resubList.push({sn,name:(p&&p.name)||currentStudentsFullName(c,sn)||sn,group:(p&&p.group)||'',has:(p&&p.media)?true:false}); });
+        const all=document.getElementById('resubAll'); if(all)all.checked=true;
+        renderResubList();
+        msgHide('resubMsg');
+        document.getElementById('resubModal').classList.remove('hidden');
+    });
+}
+function renderResubList(){
+    const wrap=document.getElementById('resubWrap'); if(!wrap)return;
+    wrap.innerHTML='';
+    if(!_resubList.length){ wrap.innerHTML='<div class="empty-state" style="padding:8px">لا يوجد متسابقون</div>'; return; }
+    _resubList.forEach(x=>{
+        const row=document.createElement('div'); row.className='check-line'; row.style.margin='0';
+        row.innerHTML='<input type="checkbox" class="resub-cb" value="'+escapeHtml(x.sn)+'" checked />'+
+        avatarHTML({name:x.name},'part-avatar')+
+        '<div style="flex:1;min-width:0"><div style="font-weight:800;color:#fff;font-size:.85rem">'+escapeHtml(x.name)+'</div>'+
+        '<div style="color:var(--muted);font-size:.7rem">'+escapeHtml(x.group)+(x.has?'':' • بدون مشاركة')+'</div></div>';
+        wrap.appendChild(row);
+    });
+}
+function resubToggleAll(on){
+    document.querySelectorAll('#resubWrap .resub-cb').forEach(cb=>cb.checked=on);
+}
+function closeResubModal(){ document.getElementById('resubModal').classList.add('hidden'); }
+async function confirmResubmit(){
+    msgHide('resubMsg');
+    const compId=_resubCompId; if(!compId)return;
+    const sel=[];
+    document.querySelectorAll('#resubWrap .resub-cb:checked').forEach(cb=>sel.push(cb.value));
+    if(!sel.length){ msg('resubMsg','❌ اختر متسابقاً واحداً على الأقل','error'); return; }
+    const snap=await db.ref('communityComps/'+compId).once('value');
+    const c=snap.val(); if(!c)return;
+    if(c.status!=='running'){ msg('resubMsg','❌ المسابقة لم تعد جارية','error'); return; }
+    const upd={allowNewSubmission:true};
+    sel.forEach(sn=>{ upd['participants/'+sn+'/needNew']=true; });
+    await db.ref('communityComps/'+compId).update(upd);
+    sel.forEach(sn=>{
+        const p=c.participants&&c.participants[sn];
+        if(p&&p.group)notifyStudent(p.group,sn,'🔁 مطلوب مشاركة جديدة','في مسابقة «'+(c.title||'')+'» — الجولة '+(c.currentRound||1)+': ارفع وسيطك الجديد قبل المتابعة.');
+    });
+    closeResubModal();
+    showToast('📤 طُلبت مشاركات جديدة من '+(sel.length===_resubList.length?'الكل':'المحددين')+' ('+sel.length+')');
+}
+async function finishResubmit(compId){
+    const snap=await db.ref('communityComps/'+compId).once('value');
+    const c=snap.val(); if(!c||c.status!=='running')return;
+    const upd={allowNewSubmission:false};
+    Object.keys(c.participants||{}).forEach(sn=>{ upd['participants/'+sn+'/needNew']=false; });
+    await db.ref('communityComps/'+compId).update(upd);
+    showToast('🎬 استُؤنفت المسابقة — أكمل بفتح التصويت أو تشكيل الجولة التالية');
 }
 // ===== comp management =====
 function editComp(compId){
@@ -2556,14 +2647,15 @@ async function pickedParticipant(skey){
     const snap=await db.ref('students/'+skey).once('value');
     const s=snap.val(); if(!s)return;
     const compId=_addPartComp; if(!compId)return;
-    const cid='communityComps/'+compId+'/participants/'+s.studentNumber;
+    const pid=partId(s.group,s.studentNumber);
+    const cid='communityComps/'+compId+'/participants/'+pid;
     const exist=await db.ref(cid).once('value');
     if(exist.exists()){ showToast('⚡ هذا الطالب مشارك بالفعل'); return; }
     const entry={name:s.name,group:s.group,media:null,needNew:false,photo:s.photo||''};
     await db.ref(cid).set(entry);
     showToast('➕ أُضيف '+escapeHtml(s.name)+' — ارفع محتواه الآن');
     closeAddParticipant();
-    openSubModal(compId,{name:s.name,group:s.group,sn:s.studentNumber});
+    openSubModal(compId,{name:s.name,group:s.group,sn:pid,photo:s.photo||''});
 }
 async function removeParticipant(compId,sn){
     const psnap=await db.ref('communityComps/'+compId+'/participants/'+sn).once('value');
@@ -2577,7 +2669,7 @@ async function editParticipantMedia(compId,sn){
     const psnap=await db.ref('communityComps/'+compId+'/participants/'+sn).once('value');
     const p=psnap.val();
     if(!p)return;
-    openSubModal(compId,{name:p.name,group:p.group,sn});
+    openSubModal(compId,{name:p.name,group:p.group,sn,photo:p.photo||''});
 }
 // ===== submission modal =====
 function buildNsMediaOptions(c){
@@ -2656,7 +2748,7 @@ function stopSubRec(noMessage){
 }
 function deleteMyPart(compId){
     if(!confirm('حذف مشاركتك من المسابقة؟'))return;
-    db.ref('communityComps/'+compId+'/participants/'+currentUser.studentNumber).remove()
+    db.ref('communityComps/'+compId+'/participants/'+currentUser._partId).remove()
         .then(()=>showToast('🗑️ حُذفت مشاركتك')).catch(e=>showToast('❌ '+(e.message||e)));
 }
 async function submitNewSubmission(){
@@ -2716,10 +2808,10 @@ async function submitNewSubmission(){
         if(dur&&dur>0)media.duration=dur;
         if(cover)media.cover=cover;
     }
-    const sn=_nsBehalf?_nsBehalf.sn:currentUser.studentNumber;
+    const sn=_nsBehalf?_nsBehalf.sn:currentUser._partId;
     const name=_nsBehalf?_nsBehalf.name:currentUser.name;
     const group=_nsBehalf?_nsBehalf.group:currentUser.group;
-    const photo=currentUser.photo||(_nsBehalf?'':'');
+    const photo=_nsBehalf?(_nsBehalf.photo||''):currentUser.photo;
     const entry={name,group,media,needNew:false};
     if(photo)entry.photo=photo;
     try{ await db.ref('communityComps/'+_nsComp.id+'/participants/'+sn).set(entry); }
