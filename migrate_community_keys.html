@@ -102,102 +102,109 @@ async function runMigration(){
         for(const { id: compId, c } of comps){
             total++;
             log('🔹 المسابقة: ' + (c.title || compId),'info');
-
-            const parts = c.participants || {};
-            const oldKeys = Object.keys(parts);
-            if(!oldKeys.length){
-                log('   └─ لا يوجد مشاركون — تُتخطّى.','warn');
-                skipped++;
-                continue;
-            }
-
-            // هل هناك مفاتيح رقمية تحتاج تحويلاً؟
-            const numeric = oldKeys.filter(isNumericKey);
-            if(!numeric.length){
-                log('   └─ المفاتيح منقولة مسبقاً (لا مفاتيح رقمية) — تُتخطّى.','warn');
-                already++;
-                continue;
-            }
-
-            // بناء خريطة التحويل + المشاركون الجدد
-            const mapping = {};      // oldKey -> newKey
-            const newParts = {};
-            let pendingGroup = false;
-            oldKeys.forEach(k => {
-                const v = parts[k] || {};
-                if(isCompositeKey(k)){
-                    newParts[k] = v;          // منقول سابقاً، يُحفظ كما هو
-                    return;
-                }
-                const grp = (v && v.group) || '';
-                if(!grp){
-                    // لا نعرف المجموعة → لا يمكن بناء مفتاح مركّب؛ نحافظ على المفتاح وننبه
-                    newParts[k] = v;
-                    pendingGroup = true;
-                    warnings.push('المسابقة «'+(c.title||compId)+'»: مشارك بمفتاح «'+k+'» بدون مجموعة — أُبقي كما هو');
-                    return;
-                }
-                const nk = grp + '__' + k;
-                mapping[k] = nk;
-                newParts[nk] = v;
-            });
-
-            // إعادة كتابة الجولات (rounds)
-            let roundsChanged = false;
-            const rounds = clone(c.rounds || {});
-            Object.keys(rounds).forEach(rn => {
-                const r = rounds[rn];
-                Object.keys(r).forEach(mid => {
-                    const m = r[mid];
-                    if(!m) return;
-                    ['a','b'].forEach(side => {
-                        const o = m[side];
-                        if(o && o.sn && mapping[o.sn]){
-                            o.sn = mapping[o.sn];
-                            roundsChanged = true;
-                        }
-                    });
-                });
-            });
-
-            // إعادة كتابة البطل
-            let champChanged = false;
-            const champion = c.champion ? clone(c.champion) : null;
-            if(champion && champion.sn && mapping[champion.sn]){
-                champion.sn = mapping[champion.sn];
-                champChanged = true;
-            }
-
-            const update = { participants: newParts };
-            if(roundsChanged) update.rounds = rounds;
-            if(champChanged) update.champion = champion;
-            if(!roundsChanged && !champChanged && JSON.stringify(newParts) === JSON.stringify(parts)){
-                log('   └─ لا تغيير مطلوب.','warn');
-                skipped++;
-                continue;
-            }
-
-            // حفظ
             try {
+                const parts = (c && c.participants) || {};
+                const oldKeys = Object.keys(parts);
+                if(!oldKeys.length){
+                    log('   └─ لا يوجد مشاركون — تُتخطّى.','warn');
+                    skipped++;
+                    continue;
+                }
+
+                // هل هناك مفاتيح رقمية تحتاج تحويلاً؟
+                const numeric = oldKeys.filter(isNumericKey);
+                if(!numeric.length){
+                    log('   └─ المفاتيح منقولة مسبقاً (لا مفاتيح رقمية) — تُتخطّى.','warn');
+                    already++;
+                    continue;
+                }
+
+                // بناء خريطة التحويل + المشاركون الجدد
+                const mapping = {};      // oldKey -> newKey
+                const newParts = {};
+                let pendingGroup = false;
+                oldKeys.forEach(k => {
+                    const v = parts[k] || {};
+                    if(isCompositeKey(k)){
+                        newParts[k] = v;          // منقول سابقاً، يُحفظ كما هو
+                        return;
+                    }
+                    const grp = (v && v.group) || '';
+                    if(!grp){
+                        // لا نعرف المجموعة → لا يمكن بناء مفتاح مركّب؛ نحافظ على المفتاح وننبه
+                        newParts[k] = v;
+                        pendingGroup = true;
+                        warnings.push('المسابقة «'+(c.title||compId)+'»: مشارك بمفتاح «'+k+'» بدون مجموعة — أُبقي كما هو');
+                        return;
+                    }
+                    const nk = grp + '__' + k;
+                    mapping[k] = nk;
+                    newParts[nk] = v;
+                });
+
+                // إعادة كتابة الجولات (rounds) — بأمان تجاه القيم الفارغة (null)
+                let roundsChanged = false;
+                const rounds = clone((c && c.rounds) || {});
+                if(rounds && typeof rounds === 'object'){
+                    Object.keys(rounds).forEach(rn => {
+                        const r = rounds[rn];
+                        if(!r || typeof r !== 'object') return;
+                        Object.keys(r).forEach(mid => {
+                            const m = r[mid];
+                            if(!m || typeof m !== 'object') return;
+                            ['a','b'].forEach(side => {
+                                const o = m[side];
+                                if(o && o.sn && mapping[o.sn]){
+                                    o.sn = mapping[o.sn];
+                                    roundsChanged = true;
+                                }
+                            });
+                        });
+                    });
+                }
+
+                // إعادة كتابة البطل
+                let champChanged = false;
+                const champion = (c && c.champion) ? clone(c.champion) : null;
+                if(champion && champion.sn && mapping[champion.sn]){
+                    champion.sn = mapping[champion.sn];
+                    champChanged = true;
+                }
+
+                const update = { participants: newParts };
+                if(roundsChanged) update.rounds = rounds;
+                if(champChanged) update.champion = champion;
+                if(!roundsChanged && !champChanged && JSON.stringify(newParts) === JSON.stringify(parts)){
+                    log('   └─ لا تغيير مطلوب.','warn');
+                    skipped++;
+                    continue;
+                }
+
+                // حفظ
                 await db.ref('communityComps/' + compId).update(update);
                 migrated++;
                 const movedN = Object.keys(mapping).length;
                 movedParts += movedN;
                 let mm = 0;
-                Object.keys(rounds).forEach(rn => {
-                    Object.keys(rounds[rn]).forEach(mid => {
-                        const m = rounds[rn][mid];
-                        ['a','b'].forEach(side => {
-                            const o = m && m[side];
-                            if(o && o.sn && String(o.sn).indexOf('__') !== -1) mm++;
+                if(rounds && typeof rounds === 'object'){
+                    Object.keys(rounds).forEach(rn => {
+                        const r = rounds[rn];
+                        if(!r || typeof r !== 'object') return;
+                        Object.keys(r).forEach(mid => {
+                            const m = r[mid];
+                            if(!m || typeof m !== 'object') return;
+                            ['a','b'].forEach(side => {
+                                const o = m && m[side];
+                                if(o && o.sn && String(o.sn).indexOf('__') !== -1) mm++;
+                            });
                         });
                     });
-                });
+                }
                 movedMatches += mm;
                 log('   └─ ✅ نُقل '+movedN+' مشارك'+(pendingGroup?' (مع تنبيهات)':'')+(roundsChanged?' • '+mm+' مواجهة':'')+'','ok');
             } catch(e) {
-                log('   └─ ❌ فشل حفظ: ' + (e && e.message || e),'err');
-                warnings.push('المسابقة «'+(c.title||compId)+'» فشل حفظها');
+                log('   └─ ❌ خطأ في هذه المسابقة: ' + (e && e.message || e),'err');
+                warnings.push('المسابقة «'+(c.title||compId)+'» فشل معالجتها: '+(e && e.message || e));
             }
         }
     } catch(e) {
