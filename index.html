@@ -422,12 +422,12 @@ document.addEventListener('keydown',function(e){
             <div id="loginGroupExternal" class="hidden">
                 <div id="extStep1">
                     <div class="input-group"><label class="label">📱 رقم الهاتف</label><input type="tel" class="input" id="loginExternalPhone" placeholder="مثال: 01012345678" /></div>
-                    <div class="input-group"><label class="label">✍️ اسمك</label><input type="text" class="input" id="loginExternalName" placeholder="الاسم" /></div>
-                    <button type="button" class="btn btn-primary btn-sm btn-block" id="extSendBtn" onclick="extRequestOtp()">📲 إرسال الرمز</button>
+                    <div class="input-group hidden" id="extNameGroup"><label class="label">✍️ اسمك</label><input type="text" class="input" id="loginExternalName" placeholder="الاسم" /></div>
+                    <button type="button" class="btn btn-primary btn-sm btn-block" id="extSendBtn" onclick="extRequestOtp()">🚪 متابعة</button>
                 </div>
                 <div id="extStep2" class="hidden">
                     <div class="input-group">
-                        <label class="label">🔑 رمز التحقق (6 أرقام — يُرسل عبر واتساب)</label>
+                        <label class="label">🔑 رمز التحقق (6 أرقام — يشاركه معلم المنصة عبر واتساب)</label>
                         <input type="text" inputmode="numeric" maxlength="6" class="input" id="loginExternalOtp" placeholder="000000" dir="ltr" style="text-align:center;letter-spacing:8px;font-weight:900" />
                     </div>
                     <div id="extDeliveryWrap"></div>
@@ -557,7 +557,8 @@ let _nsComp=null, _nsBehalf=null, _nsExistingMedia=null;
 let _addPartComp=null, _addPartCache=[];
 let _resubCompId=null, _resubList=[];
 let _editCompId=null;
-let judgeListFired=false,judgePanelFired=false;
+let judgeListFired=false;
+let _judgePanelRef=null;
 let voteRef=null, celebratedMatches={};
 let suppressVoteRerender=0;
 let routeCompFrom='home';
@@ -1055,6 +1056,8 @@ function setLoginRole(r){
     extOtpPending=null;
     const s1=document.getElementById('extStep1'); if(s1)s1.classList.remove('hidden');
     const s2=document.getElementById('extStep2'); if(s2)s2.classList.add('hidden');
+    const ng=document.getElementById('extNameGroup'); if(ng)ng.classList.add('hidden');
+    const nn=document.getElementById('loginExternalName'); if(nn)nn.value='';
     const d=document.getElementById('extDeliveryWrap'); if(d)d.innerHTML='';
     msgHide('loginMsg');
 }
@@ -1129,32 +1132,49 @@ async function extRequestOtp(){
     const raw=document.getElementById('loginExternalPhone').value.trim();
     const phone=normalizeEgyptPhone(raw);
     if(!phone){ msg('loginMsg','❌ رقم هاتف مصري غير صالح (مثال: 01012345678)','error'); return; }
+    const esnap=await db.ref('communityExternals/'+phone).once('value');
+    const existing=esnap.val();
+    if(existing&&existing.activated){
+        currentUser={role:'external',name:existing.name||'خارجي',phone:phone};
+        extOtpPending=null;
+        document.getElementById('loginPage').classList.add('hidden');
+        document.getElementById('appPage').classList.remove('hidden');
+        enterApp();
+        startGlobalVoteTimer();
+        enforceVoteTimers();
+        return;
+    }
     const n=document.getElementById('loginExternalName').value.trim();
-    if(!n){ msg('loginMsg','✍️ اكتب اسمك أولاً','error'); return; }
-    extOtpPending={phone:phone,name:n,isNew:true};
+    if(!n){
+        const ng=document.getElementById('extNameGroup'); if(ng)ng.classList.remove('hidden');
+        const nn=document.getElementById('loginExternalName'); if(nn)nn.focus();
+        msg('loginMsg','✍️ هذا الرقم جديد أو غير مُفعّل بعد — اكتب اسمك ثم اضغط «متابعة» لإرسال رمز التحقق','info');
+        return;
+    }
+    extOtpPending={phone:phone,name:n,isNew:!existing};
     const code=genOtpCode();
     const exp=Date.now()+5*60*1000;
-    await db.ref('communityOtps/'+phone).set({code:code,exp:exp,attempts:0});
+    await db.ref('communityOtps/'+phone).set({code:code,exp:exp,attempts:0,name:n});
     const s1=document.getElementById('extStep1'); if(s1)s1.classList.add('hidden');
     const s2=document.getElementById('extStep2'); if(s2)s2.classList.remove('hidden');
     const inp=document.getElementById('loginExternalOtp'); if(inp){inp.value='';inp.focus();}
-    renderExtDelivery(code,phone);
-    msg('loginMsg','🔢 أرسلنا رمزاً مكوّناً من 6 أرقام — أرسله لنفسك أو لمعلم المنصة ثم أدخله بالأسفل','success');
+    renderExtDelivery(phone,n);
+    msg('loginMsg','📨 أُرسل طلب تحقق إلى معلم المنصة — انتظر مشاركته الرمز في محادثة الواتساب ثم أدخله هنا','success');
 }
-function renderExtDelivery(code,phone){
+function renderExtDelivery(phone,name){
     const wrap=document.getElementById('extDeliveryWrap'); if(!wrap)return;
-    const selfLink='https://wa.me/'+toE164(phone)+'?text='+encodeURIComponent('رمز التحقق لمنصة المزهر هو: '+code+' — صالح لمدة 5 دقائق');
-    wrap.innerHTML='<div class="comp-desc mt-1 mb-1">📩 اختر طريقة إرسال رمز التحقق:</div>'+
-    '<div class="actions-row"><a class="btn btn-success btn-sm" target="_blank" rel="noopener" href="'+selfLink+'">📱 أرسل لي عبر واتساب</a>'+
-    '<button type="button" class="btn btn-secondary btn-sm" onclick="extOtpToTeacher(\''+code+'\',\''+phone+'\')">👨‍🏫 أرسل لمعلم المنصة</button></div>'+
+    wrap.innerHTML='<div class="comp-desc mt-1 mb-1">🔑 لاستلام الرمز، أرسل طلباً لمعلم المنصة عبر واتساب وسيشاركك الرمز في المحادثة:</div>'+
+    '<button type="button" class="btn btn-success btn-sm" onclick="extOtpToTeacher(\''+phone+'\',\''+escapeHtml(name||'')+'\')">👨‍🏫 إرسال طلب تحقق للمعلم</button>'+
+    '<div class="mt-1" style="text-align:center"><span class="text-white-50" style="font-size:.72rem">🔐 لن يظهر الرمز هنا — يشاركه معك المعلم في محادثة الواتساب</span></div>'+
     '<div class="mt-1" style="text-align:center"><a href="javascript:void(0)" onclick="extResendOtp()" style="font-size:.78rem;color:var(--muted)">🔄 رمز جديد</a></div>';
 }
-function extOtpToTeacher(code,phone){
+function extOtpToTeacher(phone,name){
     db.ref('communityConfig/teacherWhatsapp').once('value',snap=>{
         const t=snap.val();
         const tp=normalizeEgyptPhone(t);
         if(!tp){ msg('loginMsg','❌ لم يُضبط رقم واتساب المعلم في الإعدادات','error'); return; }
-        const link='https://wa.me/'+toE164(tp)+'?text='+encodeURIComponent('رمز تحقق خارجي لرقم '+phone+' هو: '+code+' — صالح لمدة 5 دقائق');
+        const text='طلب رمز تحقق لمنصة المزهر من الرقم '+phone+(name?' ('+name+')':'')+' — افتح محادثة مع هذا الرقم: https://wa.me/'+toE164(phone);
+        const link='https://wa.me/'+toE164(tp)+'?text='+encodeURIComponent(text);
         window.open(link,'_blank');
     });
 }
@@ -1178,11 +1198,17 @@ async function extVerifyOtp(){
     let ext=null;
     const esnap=await db.ref('communityExternals/'+phone).once('value');
     ext=esnap.val();
+    const typedName=extOtpPending.name||'خارجي';
     if(!ext){
-        ext={name:extOtpPending.name||'خارجي',phone:phone,at:Date.now()};
+        ext={name:typedName,phone:phone,at:Date.now(),activated:true};
         await db.ref('communityExternals/'+phone).set(ext);
+    }else{
+        const upd={activated:true,at:Date.now()};
+        if(typedName&&typedName!=='خارجي')upd.name=typedName;
+        await db.ref('communityExternals/'+phone).update(upd);
+        ext.name=upd.name||ext.name;
     }
-    currentUser={role:'external',name:ext.name||extOtpPending.name,phone:phone};
+    currentUser={role:'external',name:ext.name||typedName,phone:phone};
     extOtpPending=null;
     document.getElementById('loginPage').classList.add('hidden');
     document.getElementById('appPage').classList.remove('hidden');
@@ -1196,13 +1222,15 @@ async function extResendOtp(){
     const phone=extOtpPending.phone;
     const code=genOtpCode();
     const exp=Date.now()+5*60*1000;
-    await db.ref('communityOtps/'+phone).set({code:code,exp:exp,attempts:0});
-    renderExtDelivery(code,phone);
-    msg('loginMsg','🔄 أُعيد توليد رمز جديد — أرسله لصاحب الرقم ثم أدخله بالأسفل','success');
+    await db.ref('communityOtps/'+phone).set({code:code,exp:exp,attempts:0,name:extOtpPending.name||''});
+    renderExtDelivery(phone,extOtpPending.name);
+    msg('loginMsg','🔄 أُعيد توليد رمز جديد — أرسل طلباً لمعلم المنصة مجدداً ليشاركك الرمز','success');
 }
 function extBackToStep1(silent){
     const step1=document.getElementById('extStep1'); if(step1)step1.classList.remove('hidden');
     const step2=document.getElementById('extStep2'); if(step2)step2.classList.add('hidden');
+    const ng=document.getElementById('extNameGroup'); if(ng)ng.classList.add('hidden');
+    const nn=document.getElementById('loginExternalName'); if(nn)nn.value='';
     const d=document.getElementById('extDeliveryWrap'); if(d)d.innerHTML='';
     if(!silent)msgHide('loginMsg');
 }
@@ -1219,6 +1247,30 @@ function cleanupExpiredOtps(){
     }).catch(()=>{});
 }
 setInterval(cleanupExpiredOtps,60*1000);
+let _otpListRef=null;
+function initOtpRequestsPanel(){
+    if(_otpListRef){ _otpListRef.off('value'); _otpListRef=null; }
+    _otpListRef=db.ref('communityOtps').on('value',snap=>{
+        const list=document.getElementById('otpReqList'); if(!list)return;
+        const cnt=document.getElementById('otpReqCount');
+        list.innerHTML='';
+        if(!snap.exists()){ list.innerHTML='<div class="empty-state" style="padding:8px">لا توجد طلبات حاليًا</div>'; if(cnt)cnt.textContent='0'; return; }
+        let n=0;
+        snap.forEach(child=>{
+            const o=child.val(); if(!o)return;
+            const phone=child.key; n++;
+            const valid=o.exp&&Date.now()<o.exp;
+            const row=document.createElement('div'); row.className='row-line';
+            row.style.opacity=(valid?'1':'0.45');
+            row.innerHTML=avatarHTML(o)+
+            '<div style="flex:1;min-width:0"><div class="name">'+escapeHtml(o.name||'خارجي')+'</div>'+
+            '<div class="sub">📱 '+escapeHtml(phone)+' · 🔑 '+escapeHtml(String(o.code||''))+(valid?'':' · ⏳ صلاحيتها انتهت')+'</div></div>'+
+            '<a class="btn btn-success btn-xs" target="_blank" rel="noopener" href="https://wa.me/'+toE164(phone)+'">💬 إرسال عبر واتساب</a>';
+            list.appendChild(row);
+        });
+        if(cnt)cnt.textContent=n;
+    });
+}
 function logout(){
     if(compListRef){ compListRef.off('value'); compListRef=null; }
     if(compRefPath){ db.ref(compRefPath).off('value'); compRefPath=null; }
@@ -1716,6 +1768,11 @@ function renderAdminOverview(main){
         '<button class="btn btn-primary" onclick="routeView=\'create\';renderNav();renderRoute()">➕ مسابقة جديدة</button>'+
         '<button class="btn btn-secondary" onclick="addJudge()">⚖️ إضافة محكم</button>'+
         '</div></div>';
+        // otp requests (live)
+        main.innerHTML+='<div class="glass card"><div class="section-title">🔐 طلبات رمز التحقق <div class="spacer"></div><span class="badge" id="otpReqCount">0</span></div>'+
+        '<div class="comp-desc mt-1">أرقام تنتظر تفعيلاً — اضغط «إرسال عبر واتساب» لفتح محادثة بالرقم، أكّد هوية المشارك ثم شاركه الرمز الظاهر بجانبه</div>'+
+        '<div id="otpReqList"><div class="empty-state" style="padding:8px">لا توجد طلبات حاليًا</div></div></div>';
+        initOtpRequestsPanel();
         // comps table
         main.innerHTML+='<div class="glass card"><div class="section-title">🏆 كل المسابقات <div class="spacer"></div><span class="badge">'+total+'</span></div>';
         if(!arr.length)main.innerHTML+='<div class="empty-state" style="padding:8px">لا توجد مسابقات بعد</div>';
@@ -1747,7 +1804,7 @@ function renderAdminOverview(main){
         '<div id="vmsMsg" class="msg" style="display:none"></div></div>';
         // teacher whatsapp
         main.innerHTML+='<div class="glass card"><div class="section-title">👨‍🏫 واتساب المعلم <div class="spacer"></div><button class="btn btn-primary btn-sm" onclick="saveTeacherWhatsapp()">💾 حفظ</button></div>'+
-        '<div class="comp-desc mt-1">يرسل إليه رمز التحقق الخاص بالمصوتين الخارجيين (اختياري — إن تُرك فارغاً يتاح الزر «أرسل لي عبر واتساب» فقط)</div>'+
+        '<div class="comp-desc mt-1">يستقبل على هذا الرقم طلبات رمز التحقق من المصوتين الخارجيين — تُرسل إليه رسالة واتساب تتضمن رقم المشارك ليفتح محادثة معه ويشاركه الرمز</div>'+
         '<div class="actions-row mt-1"><div class="input-group" style="flex:1;min-width:150px"><label class="label">👨‍🏫 رقم واتساب المعلم</label><input type="tel" class="input" id="twInput" placeholder="مثال: 01012345678" /></div></div>'+
         '<div id="twMsg" class="msg" style="display:none"></div></div>';
         db.ref('communityConfig/teacherWhatsapp').once('value',snap=>{ const el=document.getElementById('twInput'); if(el)el.value=(snap.val()||''); });
@@ -1757,8 +1814,8 @@ function renderAdminOverview(main){
     });
 }
 function initJudgesPanel(container){
-    if(judgePanelFired)return; judgePanelFired=true;
-    db.ref('communityJudges').on('value',snap=>{
+    if(_judgePanelRef){ _judgePanelRef.off('value'); _judgePanelRef=null; }
+    _judgePanelRef=db.ref('communityJudges').on('value',snap=>{
         const c=document.getElementById('adminJudges'); if(!c)return;
         c.innerHTML='';
         if(!snap.exists()){ c.innerHTML='<div class="empty-state" style="padding:8px">لا يوجد محكمون بعد</div>'; return; }
