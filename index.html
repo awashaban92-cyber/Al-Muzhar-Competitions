@@ -1144,6 +1144,17 @@ async function extRequestOtp(){
         enforceVoteTimers();
         return;
     }
+    const osnap2=await db.ref('communityOtps/'+phone).once('value');
+    const prev=osnap2.val();
+    if(prev&&prev.exp&&Date.now()<prev.exp){
+        extOtpPending={phone:phone,name:prev.name||'خارجي',isNew:!existing};
+        const s1=document.getElementById('extStep1'); if(s1)s1.classList.add('hidden');
+        const s2=document.getElementById('extStep2'); if(s2)s2.classList.remove('hidden');
+        const inp=document.getElementById('loginExternalOtp'); if(inp){inp.value='';inp.focus();}
+        renderExtDelivery(phone,prev.name||'خارجي');
+        msg('loginMsg','🔑 يوجد رمز تحقق صالح لك — أدخله لإتمام الدخول (لا يمكن طلب رمز جديد قبل انتهاء صلاحيته)','info');
+        return;
+    }
     const n=document.getElementById('loginExternalName').value.trim();
     if(!n){
         const ng=document.getElementById('extNameGroup'); if(ng)ng.classList.remove('hidden');
@@ -1220,6 +1231,15 @@ async function extResendOtp(){
     if(!extOtpPending){ msg('loginMsg','❌ اضغط «إرسال الرمز» لبدء التحقق','error'); return; }
     msgHide('loginMsg');
     const phone=extOtpPending.phone;
+    const osnap=await db.ref('communityOtps/'+phone).once('value');
+    const o=osnap.val();
+    if(o&&o.exp&&Date.now()<o.exp){
+        const left=Math.max(0,Math.ceil((o.exp-Date.now())/60000));
+        const hh=Math.floor(left/60), mm=left%60;
+        const rem=(hh>0)?(hh+' ساعة و'+mm+' دقيقة'):(mm+' دقيقة');
+        msg('loginMsg','⏳ يوجد رمز صالح لك — إعادة الإرسال متاحة بعد انتهاء صلاحيته (تبقّى '+rem+')','error');
+        return;
+    }
     const code=genOtpCode();
     const exp=Date.now()+8*60*60*1000;
     await db.ref('communityOtps/'+phone).set({code:code,exp:exp,attempts:0,name:extOtpPending.name||''});
