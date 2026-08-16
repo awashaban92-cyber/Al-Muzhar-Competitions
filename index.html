@@ -192,6 +192,11 @@ body{
 .mgrid-card{display:flex;flex-direction:column;gap:10px}
 .mgrid-card .card-body{flex:1}
 .row-line{display:flex;align-items:center;gap:10px;padding:10px;border-radius:13px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);margin-bottom:8px}
+.rank-num{font-size:.9rem;font-weight:900;color:var(--acc);min-width:34px;text-align:center}
+.pts-num{font-weight:900;font-size:1.25rem;color:#fbbf24}
+.pts-adjust{min-height:0;padding:6px 8px;font-size:.8rem}
+.actions-col{display:flex;align-items:center;gap:6px}
+.log-item{font-size:.72rem;color:var(--muted);display:flex;gap:6px;align-items:center;margin:2px 0}
 .row-line .name{color:#fff;font-weight:800;font-size:.86rem}
 .row-line .sub{color:var(--muted);font-size:.72rem}
 .actions-row{display:flex;gap:8px;flex-wrap:wrap}
@@ -387,7 +392,7 @@ document.addEventListener('keydown',function(e){
     var lp=document.getElementById('loginPage');
     if(!lp||lp.classList.contains('hidden'))return;
     var t=e.target;
-    if(t&&t.tagName&&(t.tagName==='INPUT'||t.tagName==='SELECT')){ e.preventDefault(); if(loginRole==='external'&&extOtpPending){ extVerifyOtp(); } else { doLogin(); } }
+    if(t&&t.tagName&&(t.tagName==='INPUT'||t.tagName==='SELECT')){ e.preventDefault(); if(loginRole==='external'){ const s1=document.getElementById('extStep1'); if(s1&&!s1.classList.contains('hidden')){ extRequestOtp(); } else { extVerifyOtp(); } } else { doLogin(); } }
 });
 </script>
 
@@ -427,13 +432,25 @@ document.addEventListener('keydown',function(e){
                 </div>
                 <div id="extStep2" class="hidden">
                     <div class="input-group">
-                        <label class="label">🔑 رمز التحقق (6 أرقام — يشاركه معلم المنصة عبر واتساب)</label>
+                        <label class="label" id="extStep2Label">🔑 رمز التحقق (6 أرقام — يشاركه معلم المنصة عبر واتساب)</label>
                         <input type="text" inputmode="numeric" maxlength="6" class="input" id="loginExternalOtp" placeholder="000000" dir="ltr" style="text-align:center;letter-spacing:8px;font-weight:900" />
                     </div>
                     <div id="extDeliveryWrap"></div>
                     <div class="actions-row mt-1">
                         <button type="button" class="btn btn-success btn-sm" id="extVerifyBtn" onclick="extVerifyOtp()">✅ تحقق ودخول</button>
                         <button type="button" class="btn btn-secondary btn-sm" id="extResendBtn" onclick="extResendOtp()">🔄 إعادة إرسال الرمز</button>
+                    </div>
+                    <div id="extForgotWrap" class="hidden mt-1" style="text-align:center"><a href="javascript:void(0)" onclick="extForgotPwd()" style="font-size:.78rem;color:var(--muted)">🔁 نسيت رمزك؟</a></div>
+                    <div class="mt-1" style="text-align:center"><a href="javascript:void(0)" onclick="extBackToStep1()" style="font-size:.78rem;color:var(--muted)">✏️ تغيير الرقم أو الاسم</a></div>
+                </div>
+                <div id="extStep3" class="hidden">
+                    <div class="input-group">
+                        <label class="label">🔑 أنشئ كلمة سر خاصة بك (ستدخل بها في كل مرة)</label>
+                        <input type="password" class="input" id="loginExternalPwd" placeholder="كلمة السر الجديدة" style="text-align:center;font-weight:900" />
+                        <input type="password" class="input" id="loginExternalPwd2" placeholder="تأكيد كلمة السر" style="text-align:center;font-weight:900" />
+                    </div>
+                    <div class="actions-row mt-1">
+                        <button type="button" class="btn btn-success btn-sm" onclick="extCreatePwd()">✅ حفظ والدخول</button>
                     </div>
                     <div class="mt-1" style="text-align:center"><a href="javascript:void(0)" onclick="extBackToStep1()" style="font-size:.78rem;color:var(--muted)">✏️ تغيير الرقم أو الاسم</a></div>
                 </div>
@@ -563,6 +580,9 @@ let voteRef=null, celebratedMatches={};
 let suppressVoteRerender=0;
 let routeCompFrom='home';
 let extOtpPending=null; // {phone, name, isNew} أثناء تحقق المصوت الخارجي
+let extLoginMode='otp'; // 'otp' | 'pwd' | 'create' — وضع دخول المصوت الخارجي
+let extPwdPhone=null; // الرقم قيد التحقق بكلمة السر
+let extPwdAttempts=0; // عدّاد محاولات كلمة السر الخاطئة
 
 // ===== helpers =====
 function escapeHtml(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, x => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[x]); }
@@ -990,6 +1010,126 @@ function getDeviceId(){
 function isAdmin(){
     return currentUser&&(currentUser.role==='teacher'||currentUser.role==='assistant');
 }
+var pointsCfg={vote:1,participate:5};
+var _pointsCfgLoaded=false;
+function loadPointsCfg(){
+    return db.ref('communityConfig/points').once('value').then(snap=>{
+        const v=snap.val();
+        if(v&&typeof v==='object'){
+            if(typeof v.vote==='number')pointsCfg.vote=v.vote;
+            if(typeof v.participate==='number')pointsCfg.participate=v.participate;
+        }
+        _pointsCfgLoaded=true;
+        return pointsCfg;
+    }).catch(()=>pointsCfg);
+}
+async function awardPoints(actionKey,type){
+    try{
+        if(!currentUser)return;
+        const vk=makeVoterKey(); if(!vk||vk==='teacher')return;
+        if(!_pointsCfgLoaded)await loadPointsCfg();
+        const pts=(type==='participate'?pointsCfg.participate:pointsCfg.vote)||0;
+        if(!pts)return;
+        const ref=db.ref('communityPoints/'+vk);
+        const logSnap=await ref.child('log/'+actionKey).once('value');
+        if(logSnap.exists())return;
+        const statsSnap=await ref.child('stats').once('value');
+        const st=statsSnap.val()||{points:0,votes:0,participations:0};
+        const upd={ name:currentUser.name||'', role:currentUser.role||'' };
+        if(currentUser.group)upd.group=currentUser.group;
+        if(currentUser.phone)upd.phone=currentUser.phone;
+        upd['stats/points']=(st.points||0)+pts;
+        if(type==='vote')upd['stats/votes']=(st.votes||0)+1;
+        if(type==='participate')upd['stats/participations']=(st.participations||0)+1;
+        upd['log/'+actionKey]={type:type,pts:pts,at:Date.now()};
+        upd.at=Date.now();
+        await ref.update(upd);
+    }catch(e){}
+}
+async function awardPointsTo(vk,info,actionKey,type){
+    try{
+        if(!vk)return false;
+        const role=info&&info.role?info.role:roleFromVoterKey(vk);
+        if(role!=='student'&&role!=='guardian'&&role!=='external')return false;
+        if(!_pointsCfgLoaded)await loadPointsCfg();
+        const pts=(type==='participate'?pointsCfg.participate:pointsCfg.vote)||0;
+        if(!pts)return false;
+        const ref=db.ref('communityPoints/'+vk);
+        const logSnap=await ref.child('log/'+actionKey).once('value');
+        if(logSnap.exists())return false;
+        const statsSnap=await ref.child('stats').once('value');
+        const st=statsSnap.val()||{points:0,votes:0,participations:0};
+        const upd={ name:info&&info.name?info.name:'', role:role };
+        if(info&&info.group)upd.group=info.group;
+        if(info&&info.phone)upd.phone=info.phone;
+        upd['stats/points']=(st.points||0)+pts;
+        if(type==='vote')upd['stats/votes']=(st.votes||0)+1;
+        if(type==='participate')upd['stats/participations']=(st.participations||0)+1;
+        upd['log/'+actionKey]={type:type,pts:pts,at:Date.now()};
+        upd.at=Date.now();
+        await ref.update(upd);
+        return true;
+    }catch(e){ return false; }
+}
+async function backfillPoints(){
+    if(!_pointsCfgLoaded)await loadPointsCfg();
+    let votes=0, parts=0, skipped=0;
+    const studentByPart={}, studentByName={};
+    try{
+        const sSnap=await db.ref('students').once('value');
+        if(sSnap.exists())sSnap.forEach(ch=>{ const s=ch.val()||{}; const rec={name:s.name||'',group:s.group||'',phone:s.phone||'',role:'student',_key:ch.key}; studentByPart[partId(s.group,s.studentNumber)]=rec; studentByName['stu:'+ch.key]=rec; studentByName['guard:'+ch.key]={name:s.name||'',group:s.group||'',role:'guardian',_key:ch.key}; });
+    }catch(e){}
+    const extByName={};
+    try{
+        const eSnap=await db.ref('communityExternals').once('value');
+        if(eSnap.exists())eSnap.forEach(ch=>{ const e=ch.val()||{}; extByName[ch.key]={name:e.name||'',phone:ch.key,role:'external'}; });
+    }catch(e){}
+    const cSnap=await db.ref('communityComps').once('value');
+    if(!cSnap.exists())return {votes,parts,skipped};
+    cSnap.forEach(compCh=>{
+        const compId=compCh.key; const c=compCh.val()||{};
+        const rounds=c.rounds||{};
+        Object.keys(rounds).forEach(rn=>{
+            const r=rounds[rn]; if(!r||typeof r!=='object')return;
+            Object.keys(r).forEach(mid=>{
+                const m=r[mid]; if(!m||!m.votes)return;
+                Object.keys(m.votes).forEach(vk=>{
+                    const v=m.votes[vk];
+                    if(!v)return;
+                    const blocked=(typeof v==='object')&&v.blocked===true;
+                    const role=roleFromVoterKey(vk);
+                    if(blocked)return;
+                    if(role!=='student'&&role!=='guardian'&&role!=='external'){ skipped++; return; }
+                    let info={};
+                    if(typeof v==='object'){
+                        info.name=v.name||''; info.role=v.role||role;
+                        if(v.phone)info.phone=v.phone;
+                    }
+                    if(!info.name){
+                        if(role==='external'&&extByName[vk.slice(4)])info.name=extByName[vk.slice(4)].name;
+                        else if(role==='student'||role==='guardian'){
+                            if(studentByName[vk])info=Object.assign({},studentByName[vk]);
+                        }
+                    }
+                    if(!info.name)info.name=(role==='external'?'خارجي':vk.split(':')[1]||'');
+                    if(awardPointsTo(vk,info,'vote:'+compId+':'+rn+':'+mid,'vote'))votes++;
+                });
+            });
+        });
+        const parts2=c.participants||{};
+        Object.keys(parts2).forEach(sn=>{
+            const p=parts2[sn];
+            if(!p||!p.media)return;
+            const st2=studentByPart[sn];
+            if(!st2)return;
+            const vk='stu:'+st2._key;
+            const info={name:st2.name,group:st2.group,role:'student'};
+            if(st2.phone)info.phone=st2.phone;
+            if(awardPointsTo(vk,info,'part:'+compId,'participate'))parts++;
+        });
+    });
+    return {votes,parts,skipped};
+}
 var voteWeights={teacher:1,student:1,guardian:1,judge:1,external:1};
 var voteWeightsLoaded=false;
 var videoMaxSec=120;
@@ -1054,8 +1194,14 @@ function setLoginRole(r){
     else if(r==='external')document.getElementById('loginGroupExternal').classList.remove('hidden');
     const glb=document.getElementById('generalLoginBtn'); if(glb)glb.classList.toggle('hidden',r==='external');
     extOtpPending=null;
+    extLoginMode='otp'; extPwdPhone=null; extPwdAttempts=0;
     const s1=document.getElementById('extStep1'); if(s1)s1.classList.remove('hidden');
     const s2=document.getElementById('extStep2'); if(s2)s2.classList.add('hidden');
+    const s3=document.getElementById('extStep3'); if(s3)s3.classList.add('hidden');
+    const fg=document.getElementById('extForgotWrap'); if(fg)fg.classList.add('hidden');
+    const lb=document.getElementById('extStep2Label'); if(lb)lb.textContent='🔑 رمز التحقق (6 أرقام — يشاركه معلم المنصة عبر واتساب)';
+    const vb=document.getElementById('extVerifyBtn'); if(vb)vb.textContent='✅ تحقق ودخول';
+    const rb=document.getElementById('extResendBtn'); if(rb)rb.classList.remove('hidden');
     const ng=document.getElementById('extNameGroup'); if(ng)ng.classList.add('hidden');
     const nn=document.getElementById('loginExternalName'); if(nn)nn.value='';
     const d=document.getElementById('extDeliveryWrap'); if(d)d.innerHTML='';
@@ -1134,19 +1280,38 @@ async function extRequestOtp(){
     if(!phone){ msg('loginMsg','❌ رقم هاتف مصري غير صالح (مثال: 01012345678)','error'); return; }
     const esnap=await db.ref('communityExternals/'+phone).once('value');
     const existing=esnap.val();
+    if(existing&&existing.disabled){
+        msg('loginMsg','🚫 هذا الحساب معطّل — تواصل مع معلم المنصة','error');
+        return;
+    }
     if(existing&&existing.activated){
-        currentUser={role:'external',name:existing.name||'خارجي',phone:phone};
-        extOtpPending=null;
-        document.getElementById('loginPage').classList.add('hidden');
-        document.getElementById('appPage').classList.remove('hidden');
-        enterApp();
-        startGlobalVoteTimer();
-        enforceVoteTimers();
+        if(existing.pwd){
+            extLoginMode='pwd'; extPwdPhone=phone; extPwdAttempts=0; extOtpPending=null;
+            const s1=document.getElementById('extStep1'); if(s1)s1.classList.add('hidden');
+            const s3=document.getElementById('extStep3'); if(s3)s3.classList.add('hidden');
+            const s2=document.getElementById('extStep2'); if(s2)s2.classList.remove('hidden');
+            const lb=document.getElementById('extStep2Label'); if(lb)lb.textContent='🔑 كلمة السر — أدخل رمزك (كلمة السر) للدخول';
+            const vb=document.getElementById('extVerifyBtn'); if(vb)vb.textContent='✅ دخول';
+            const rb=document.getElementById('extResendBtn'); if(rb)rb.classList.add('hidden');
+            const fg=document.getElementById('extForgotWrap'); if(fg)fg.classList.remove('hidden');
+            const dw=document.getElementById('extDeliveryWrap'); if(dw)dw.innerHTML='';
+            const inp=document.getElementById('loginExternalOtp'); if(inp){inp.value='';inp.focus();}
+            msg('loginMsg','👋 مرحباً بعودتك — أدخل كلمة السر للمشاركة في التصويت','info');
+            return;
+        }
+        extLoginMode='create'; extPwdPhone=phone; extPwdAttempts=0; extOtpPending=null;
+        const s1=document.getElementById('extStep1'); if(s1)s1.classList.add('hidden');
+        const s2=document.getElementById('extStep2'); if(s2)s2.classList.add('hidden');
+        const s3=document.getElementById('extStep3'); if(s3)s3.classList.remove('hidden');
+        const p1=document.getElementById('loginExternalPwd'); if(p1){p1.value='';p1.focus();}
+        const p2=document.getElementById('loginExternalPwd2'); if(p2)p2.value='';
+        msg('loginMsg','🔑 هذا الحساب مُفعّل — أنشئ كلمة سر خاصة بك للدخول في المرات القادمة','info');
         return;
     }
     const osnap2=await db.ref('communityOtps/'+phone).once('value');
     const prev=osnap2.val();
     if(prev&&prev.exp&&Date.now()<prev.exp){
+        extLoginMode='otp';
         extOtpPending={phone:phone,name:prev.name||'خارجي',isNew:!existing};
         const s1=document.getElementById('extStep1'); if(s1)s1.classList.add('hidden');
         const s2=document.getElementById('extStep2'); if(s2)s2.classList.remove('hidden');
@@ -1163,9 +1328,10 @@ async function extRequestOtp(){
         return;
     }
     extOtpPending={phone:phone,name:n,isNew:!existing};
+    extLoginMode='otp';
     const code=genOtpCode();
-    const exp=Date.now()+8*60*60*1000;
-    await db.ref('communityOtps/'+phone).set({code:code,exp:exp,attempts:0,name:n});
+    const exp=Date.now()+15*60*60*1000;
+    await db.ref('communityOtps/'+phone).set({code:code,exp:exp,attempts:0,name:n,at:Date.now()});
     const s1=document.getElementById('extStep1'); if(s1)s1.classList.add('hidden');
     const s2=document.getElementById('extStep2'); if(s2)s2.classList.remove('hidden');
     const inp=document.getElementById('loginExternalOtp'); if(inp){inp.value='';inp.focus();}
@@ -1191,6 +1357,8 @@ function extOtpToTeacher(phone,name){
 }
 async function extVerifyOtp(){
     msgHide('loginMsg');
+    if(extLoginMode==='pwd'){ return extVerifyPwd(); }
+    if(extLoginMode==='create'){ extCreatePwd(); return; }
     if(!extOtpPending){ msg('loginMsg','❌ اضغط «إرسال الرمز» أولاً','error'); return; }
     const phone=extOtpPending.phone;
     const code=document.getElementById('loginExternalOtp').value.trim();
@@ -1209,16 +1377,18 @@ async function extVerifyOtp(){
     let ext=null;
     const esnap=await db.ref('communityExternals/'+phone).once('value');
     ext=esnap.val();
+    if(ext&&ext.disabled){ msg('loginMsg','🚫 هذا الحساب معطّل — تواصل مع معلم المنصة','error'); return; }
     const typedName=extOtpPending.name||'خارجي';
     if(!ext){
-        ext={name:typedName,phone:phone,at:Date.now(),activated:true};
+        ext={name:typedName,phone:phone,at:Date.now(),activated:true,pwd:code};
         await db.ref('communityExternals/'+phone).set(ext);
     }else{
-        const upd={activated:true,at:Date.now()};
+        const upd={activated:true,at:Date.now(),pwd:code};
         if(typedName&&typedName!=='خارجي')upd.name=typedName;
         await db.ref('communityExternals/'+phone).update(upd);
         ext.name=upd.name||ext.name;
     }
+    extLoginMode='otp'; extPwdPhone=null; extPwdAttempts=0;
     currentUser={role:'external',name:ext.name||typedName,phone:phone};
     extOtpPending=null;
     document.getElementById('loginPage').classList.add('hidden');
@@ -1226,6 +1396,77 @@ async function extVerifyOtp(){
     enterApp();
     startGlobalVoteTimer();
     enforceVoteTimers();
+}
+async function extVerifyPwd(){
+    if(!extPwdPhone){ msg('loginMsg','❌ حدث خطأ — اضغط «متابعة» أولاً','error'); return; }
+    msgHide('loginMsg');
+    const phone=extPwdPhone;
+    const code=document.getElementById('loginExternalOtp').value.trim();
+    if(!/^[0-9]{6}$/.test(code)){ msg('loginMsg','❌ أدخل الرمز المكوّن من 6 أرقام','error'); return; }
+    const esnap=await db.ref('communityExternals/'+phone).once('value');
+    const e=esnap.val();
+    if(!e||!e.pwd){ msg('loginMsg','❌ لا توجد كلمة سر محفوظة — استخدم «نسيت رمزك؟»','error'); return; }
+    if(e.disabled){ msg('loginMsg','🚫 هذا الحساب معطّل — تواصل مع معلم المنصة','error'); return; }
+    if(e.pwd===code){
+        extLoginMode='otp'; extPwdPhone=null; extPwdAttempts=0; extOtpPending=null;
+        currentUser={role:'external',name:e.name||'خارجي',phone:phone};
+        document.getElementById('loginPage').classList.add('hidden');
+        document.getElementById('appPage').classList.remove('hidden');
+        enterApp();
+        startGlobalVoteTimer();
+        enforceVoteTimers();
+        return;
+    }
+    extPwdAttempts++;
+    if(extPwdAttempts>=5){
+        const fg=document.getElementById('extForgotWrap'); if(fg)fg.classList.remove('hidden');
+        msg('loginMsg','❌ انتهت المحاولات — استخدم «نسيت رمزك؟» لإعادة تعيين كلمة السر','error');
+        return;
+    }
+    msg('loginMsg','❌ كلمة السر غير صحيحة — تبقّى '+(5-extPwdAttempts)+' محاولة','error');
+}
+async function extCreatePwd(){
+    msgHide('loginMsg');
+    if(extLoginMode!=='create'||!extPwdPhone){ msg('loginMsg','❌ اضغط «متابعة» أولاً','error'); return; }
+    const phone=extPwdPhone;
+    const p1=document.getElementById('loginExternalPwd').value;
+    const p2=document.getElementById('loginExternalPwd2').value;
+    if(!p1||p1.trim().length<4){ msg('loginMsg','❌ كلمة السر يجب ألا تقل عن 4 أحرف','error'); return; }
+    if(p1!==p2){ msg('loginMsg','❌ كلمتا السر غير متطابقتين','error'); return; }
+    const pwd=p1.trim();
+    const esnap=await db.ref('communityExternals/'+phone).once('value');
+    const e=esnap.val();
+    if(!e){ msg('loginMsg','❌ الحساب غير موجود','error'); return; }
+    if(e.disabled){ msg('loginMsg','🚫 هذا الحساب معطّل — تواصل مع معلم المنصة','error'); return; }
+    await db.ref('communityExternals/'+phone).update({pwd:pwd,activated:true});
+    extLoginMode='otp'; extPwdPhone=null; extPwdAttempts=0; extOtpPending=null;
+    currentUser={role:'external',name:e.name||'خارجي',phone:phone};
+    document.getElementById('loginPage').classList.add('hidden');
+    document.getElementById('appPage').classList.remove('hidden');
+    enterApp();
+    startGlobalVoteTimer();
+    enforceVoteTimers();
+}
+async function extForgotPwd(){
+    msgHide('loginMsg');
+    if(!extPwdPhone){ msg('loginMsg','❌ حدث خطأ — أعد الدخول','error'); return; }
+    const esnap=await db.ref('communityExternals/'+extPwdPhone).once('value');
+    const e=esnap.val();
+    if(!e){ msg('loginMsg','❌ لا يوجد حساب بهذا الرقم','error'); return; }
+    if(e.disabled){ msg('loginMsg','🚫 هذا الحساب معطّل — تواصل مع معلم المنصة','error'); return; }
+    extOtpPending={phone:extPwdPhone,name:e.name||'خارجي',isNew:false};
+    extLoginMode='otp';
+    extPwdPhone=null; extPwdAttempts=0;
+    const lb=document.getElementById('extStep2Label'); if(lb)lb.textContent='🔑 رمز التحقق (6 أرقام — يشاركه معلم المنصة عبر واتساب)';
+    const vb=document.getElementById('extVerifyBtn'); if(vb)vb.textContent='✅ تحقق ودخول';
+    const rb=document.getElementById('extResendBtn'); if(rb)rb.classList.remove('hidden');
+    const fg=document.getElementById('extForgotWrap'); if(fg)fg.classList.add('hidden');
+    const inp=document.getElementById('loginExternalOtp'); if(inp){inp.value='';inp.focus();}
+    const code=genOtpCode();
+    const exp=Date.now()+15*60*60*1000;
+    await db.ref('communityOtps/'+extOtpPending.phone).set({code:code,exp:exp,attempts:0,name:extOtpPending.name||'',at:Date.now()});
+    renderExtDelivery(extOtpPending.phone,extOtpPending.name);
+    msg('loginMsg','🔁 نسيان كلمة السر — انتظر مشاركة معلم المنصة رمزاً جديداً يصبح كلمة السر الجديدة','success');
 }
 async function extResendOtp(){
     if(!extOtpPending){ msg('loginMsg','❌ اضغط «إرسال الرمز» لبدء التحقق','error'); return; }
@@ -1241,17 +1482,23 @@ async function extResendOtp(){
         return;
     }
     const code=genOtpCode();
-    const exp=Date.now()+8*60*60*1000;
-    await db.ref('communityOtps/'+phone).set({code:code,exp:exp,attempts:0,name:extOtpPending.name||''});
+    const exp=Date.now()+15*60*60*1000;
+    await db.ref('communityOtps/'+phone).set({code:code,exp:exp,attempts:0,name:extOtpPending.name||'',at:Date.now()});
     renderExtDelivery(phone,extOtpPending.name);
     msg('loginMsg','🔄 أُعيد توليد رمز جديد — أرسل طلباً لمعلم المنصة مجدداً ليشاركك الرمز','success');
 }
 function extBackToStep1(silent){
     const step1=document.getElementById('extStep1'); if(step1)step1.classList.remove('hidden');
     const step2=document.getElementById('extStep2'); if(step2)step2.classList.add('hidden');
+    const step3=document.getElementById('extStep3'); if(step3)step3.classList.add('hidden');
+    const fg=document.getElementById('extForgotWrap'); if(fg)fg.classList.add('hidden');
+    const lb=document.getElementById('extStep2Label'); if(lb)lb.textContent='🔑 رمز التحقق (6 أرقام — يشاركه معلم المنصة عبر واتساب)';
+    const vb=document.getElementById('extVerifyBtn'); if(vb)vb.textContent='✅ تحقق ودخول';
+    const rb=document.getElementById('extResendBtn'); if(rb)rb.classList.remove('hidden');
     const ng=document.getElementById('extNameGroup'); if(ng)ng.classList.add('hidden');
     const nn=document.getElementById('loginExternalName'); if(nn)nn.value='';
     const d=document.getElementById('extDeliveryWrap'); if(d)d.innerHTML='';
+    extLoginMode='otp'; extPwdPhone=null; extPwdAttempts=0;
     if(!silent)msgHide('loginMsg');
 }
 function cleanupExpiredOtps(){
@@ -1275,21 +1522,34 @@ function initOtpRequestsPanel(){
         const cnt=document.getElementById('otpReqCount');
         list.innerHTML='';
         if(!snap.exists()){ list.innerHTML='<div class="empty-state" style="padding:8px">لا توجد طلبات حاليًا</div>'; if(cnt)cnt.textContent='0'; return; }
-        let n=0;
+        const items=[];
         snap.forEach(child=>{
             const o=child.val(); if(!o)return;
-            const phone=child.key; n++;
+            items.push({phone:child.key,o});
+        });
+        items.sort((a,b)=>{ const ta=(a.o.at||a.o.exp||0), tb=(b.o.at||b.o.exp||0); return tb-ta; });
+        let n=0;
+        items.forEach(({phone,o})=>{
+            n++;
             const valid=o.exp&&Date.now()<o.exp;
             const row=document.createElement('div'); row.className='row-line';
             row.style.opacity=(valid?'1':'0.45');
             row.innerHTML=avatarHTML(o)+
             '<div style="flex:1;min-width:0"><div class="name">'+escapeHtml(o.name||'خارجي')+'</div>'+
-            '<div class="sub">📱 '+escapeHtml(phone)+' · 🔑 '+escapeHtml(String(o.code||''))+(valid?'':' · ⏳ صلاحيتها انتهت')+'</div></div>'+
+            '<div class="sub">'+relTime(o.at)+' · 📱 '+escapeHtml(phone)+' · 🔑 '+escapeHtml(String(o.code||''))+(valid?'':' · ⏳ صلاحيتها انتهت')+'</div></div>'+
             '<a class="btn btn-success btn-xs" target="_blank" rel="noopener" href="https://wa.me/'+toE164(phone)+'?text='+encodeURIComponent(extWaMessage(o,phone,valid))+'">💬 إرسال الرمز عبر واتساب</a>';
             list.appendChild(row);
         });
         if(cnt)cnt.textContent=n;
     });
+}
+function relTime(at){
+    if(!at)return '🕐 —';
+    const now=Date.now(), diff=now-at;
+    if(diff<60000)return '🕐 الآن';
+    if(diff<3600000)return '🕐 قبل '+Math.floor(diff/60000)+' دقيقة';
+    if(diff<86400000)return '🕐 قبل '+Math.floor(diff/3600000)+' ساعة';
+    return '🕐 '+new Date(at).toLocaleString('ar-EG',{hour:'2-digit',minute:'2-digit'})+' '+new Date(at).toLocaleDateString('ar-EG');
 }
 function extWaMessage(o,phone,valid){
     const name=o.name||'خارجي';
@@ -1682,6 +1942,7 @@ function renderProfile(){
         '<div class="mt-2" style="text-align:center">'+avatarHTML({name:currentUser.name},'profile-pic')+
         '<div style="font-weight:900;color:#fff;font-size:1.1rem;margin-top:6px">'+escapeHtml(currentUser.name)+'</div>'+
         '<div class="badge mt-1">📱 خارجي — '+escapeHtml(currentUser.phone)+'</div></div></div>';
+        const pwrap=document.createElement('div'); pwrap.id='myPtsCard'; body.appendChild(pwrap); renderMyPoints(pwrap);
         return;
     }
     if(currentUser.role!=='student'&&currentUser.role!=='guardian'){
@@ -1692,6 +1953,7 @@ function renderProfile(){
     '<div id="profPic">'+avatarHTML({name:currentUser.name,photo:currentUser.photo},'profile-pic')+'</div>'+
     '<div class="fun-title" style="color:#fff;font-size:1.3rem">'+escapeHtml(currentUser.name)+'</div>'+
     '<div class="badge mt-1">🗂️ '+escapeHtml(currentUser.group||'')+' — رقم '+escapeHtml(currentUser.studentNumber)+'</div></div>';
+    const pwrap=document.createElement('div'); pwrap.id='myPtsCard'; body.appendChild(pwrap); renderMyPoints(pwrap);
     if(currentUser.role==='student'){
         body.innerHTML+='<div class="glass card"><div class="section-title">🖼️ الصورة الشخصية</div>'+
         '<div class="comp-desc mt-1">حدّث صورتك لتظهر في المسابقات والمشاركات</div>'+
@@ -1719,6 +1981,44 @@ function renderProfile(){
         html+='</div>';
         cont.innerHTML=html;
     });
+}
+async function renderMyPoints(container){
+    if(!container)return;
+    const vk=makeVoterKey();
+    container.innerHTML='<div class="glass card"><div class="section-title">🏅 نقاطي</div><div class="empty-state" style="padding:8px">⏳ تحميل النقاط...</div></div>';
+    try{
+        if(!_pointsCfgLoaded)await loadPointsCfg();
+        const allSnap=await db.ref('communityPoints').once('value');
+        let my=null, rank=0, total=0;
+        if(allSnap.exists()){
+            const tmp=[];
+            allSnap.forEach(child=>{ const v=child.val(); tmp.push({key:child.key,pts:(v.stats&&v.stats.points)||0}); });
+            tmp.sort((a,b)=>b.pts-a.pts);
+            if(vk){
+                const mine=allSnap.val()[vk];
+                total=(mine&&mine.stats&&mine.stats.points)||0;
+                tmp.forEach((x,i)=>{ if(x.key===vk)rank=i+1; });
+            }
+        }
+        let html='<div class="glass card"><div class="section-title">🏅 نقاطي <div class="spacer"></div><span class="pts-num">'+total+'</span></div>'+
+        '<div class="comp-desc mt-1">'+(rank?('ترتيبك: <b>#'+rank+'</b>')+' — اجمع النقاط بالتصويت والمشاركة':'شارك بالتصويت والمشاركة لجمع النقاط')+'</div>';
+        if(vk){
+            const msnap=await db.ref('communityPoints/'+vk).once('value');
+            const mv=msnap.val();
+            if(mv&&mv.log){
+                const items=Object.entries(mv.log).sort((a,b)=>(b[1].at||0)-(a[1].at||0)).slice(0,10).map(([k,v])=>{
+                    const t='<span class="sub">'+escapeHtml(new Date(v.at).toLocaleString('ar-EG'))+'</span>';
+                    if(v.type==='vote')return '<div class="row-line"><div style="flex:1">🗳️ تصويت في مواجهة</div><span class="badge">+'+(v.pts||0)+'</span></div>';
+                    if(v.type==='participate')return '<div class="row-line"><div style="flex:1">📝 مشاركة في مسابقة</div><span class="badge">+'+(v.pts||0)+'</span></div>';
+                    if(v.type==='manual')return '<div class="row-line"><div style="flex:1">🔧 تصحيح يدوي</div><span class="badge">'+(v.pts>0?'+':'')+(v.pts||0)+'</span></div>';
+                    return '';
+                }).join('');
+                if(items)html+='<div class="mt-1" id="myPtsLog">'+items+'</div>';
+            }
+        }
+        html+='</div>';
+        container.innerHTML=html;
+    }catch(e){ container.innerHTML='<div class="glass card"><div class="section-title">🏅 نقاطي</div><div class="empty-state" style="padding:8px">تعذر تحميل النقاط</div></div>'; }
 }
 async function uploadProfilePhoto(){
     const f=document.getElementById('pfPhoto').files[0];
@@ -1758,6 +2058,7 @@ function renderAdmin(){
     '<button class="admin-tab" data-tab="voters" onclick="adminTabClick(\'voters\')">🗳️ المصوتون</button>'+
     '<button class="admin-tab" data-tab="direct" onclick="adminTabClick(\'direct\')">🔑 دخول مباشر</button>'+
     '<button class="admin-tab" data-tab="external" onclick="adminTabClick(\'external\')">📱 الخارجيون</button>'+
+    '<button class="admin-tab" data-tab="points" onclick="adminTabClick(\'points\')">🏅 النقاط</button>'+
     '</div>';
     const main=document.createElement('div'); main.id='adminMain'; main.className='mt-2'; body.appendChild(main);
     showAdminTab('overview');
@@ -1770,6 +2071,7 @@ function showAdminTab(tab){
     if(tab==='direct')renderAdminDirect(main);
     else if(tab==='external')renderAdminExternal(main);
     else if(tab==='voters')renderAdminVoters(main);
+    else if(tab==='points')renderAdminPoints(main);
     else renderAdminOverview(main);
 }
 function renderAdminOverview(main){
@@ -1951,6 +2253,30 @@ function loadDirectJudges(){
         });
     });
 }
+function extWaPwdMsg(e){
+    const name=(e&&e.name)||'مشارك';
+    const pwd=String((e&&e.pwd)||'');
+    return '🏆 منصة المزهر — كلمة السر\nمرحباً '+name+' 👋\nكلمة السر الخاصة بحسابك للتصويت:\n🔑 '+pwd+'\nأدخل رقم هاتفك مع كلمة السر في الموقع للمشاركة في التصويت. شكراً لك!';
+}
+async function toggleExternal(phone){
+    const snap=await db.ref('communityExternals/'+phone).once('value');
+    if(!snap.exists()){ showToast('❌ لا يوجد حساب بهذا الرقم'); return; }
+    const cur=snap.val();
+    await db.ref('communityExternals/'+phone).update({disabled:!cur.disabled});
+    showToast(cur.disabled?'✅ أُعيد تفعيل الحساب':'🚫 عُطّل الحساب');
+    renderAdminExternal(document.getElementById('adminMain'));
+}
+async function setExternalPwd(phone,name){
+    const e=await db.ref('communityExternals/'+phone).once('value');
+    const cur=e.val()||{};
+    const p=window.prompt('كلمة السر الجديدة لـ '+(name||phone)+' (4 أحرف فأكثر):',cur.pwd||'');
+    if(p==null)return;
+    const np=p.trim();
+    if(np.length<4){ showToast('❌ كلمة السر قصيرة — 4 أحرف على الأقل'); return; }
+    await db.ref('communityExternals/'+phone).update({pwd:np});
+    showToast('✅ حُدّثت كلمة السر');
+    renderAdminExternal(document.getElementById('adminMain'));
+}
 function renderAdminExternal(main){
     main.innerHTML='<div class="glass card"><div class="section-title">📱 المشاركون الخارجيون <div class="spacer"></div><span class="badge" id="extCount">0</span></div>'+
     '<div class="comp-desc mt-1">جميع المستخدمين الخارجيين المسجلين عبر رقم الهاتف</div>'+
@@ -1964,13 +2290,92 @@ function renderAdminExternal(main){
         snap.forEach(child=>{
             const e=child.val(); n++;
             const d=e.at?new Date(e.at).toLocaleString('ar-EG'):'-';
+            const disabled=!!e.disabled;
+            const wa='https://wa.me/'+toE164(child.key)+'?text='+encodeURIComponent(extWaPwdMsg(e));
             const row=document.createElement('div'); row.className='row-line';
+            row.style.opacity=(disabled?'0.62':'1');
             row.innerHTML=avatarHTML(e)+
-            '<div style="flex:1;min-width:0"><div class="name">'+escapeHtml(e.name||'')+'</div><div class="sub">📱 '+escapeHtml(child.key)+' · 🗓️ '+escapeHtml(d)+'</div></div>';
+            '<div style="flex:1;min-width:0"><div class="name">'+escapeHtml(e.name||'')+' '+(disabled?'<span class="badge">🚫 معطّل</span>':'<span class="badge open">🟢 نشط</span>')+'</div>'+
+            '<div class="sub">📱 '+escapeHtml(child.key)+' · 🗓️ '+escapeHtml(d)+'</div>'+
+            '<div class="sub">🔑 '+escapeHtml(String(e.pwd||'—'))+'</div></div>'+
+            '<a class="btn btn-success btn-xs" target="_blank" rel="noopener" href="'+wa+'">💬 كلمة السر</a>'+
+            '<button class="btn '+(disabled?'btn-primary':'btn-secondary')+' btn-xs" onclick="toggleExternal(\''+escapeHtml(child.key)+'\')">'+(disabled?'✅ تفعيل':'🚫 تعطيل')+'</button>'+
+            '<button class="btn btn-secondary btn-xs" onclick="setExternalPwd(\''+escapeHtml(child.key)+'\',\''+escapeHtml(e.name||'')+'\')">🔑 تعديل</button>';
             wrap.appendChild(row);
         });
         if(count)count.textContent=n;
     });
+}
+function renderAdminPoints(main){
+    main.innerHTML='<div class="glass card"><div class="section-title">🏅 النقاط التحفيزية <div class="spacer"></div><button class="btn btn-secondary btn-sm" onclick="runBackfill()">🔄 احتساب السابق</button><button class="btn btn-primary btn-sm" onclick="savePointsCfg()">💾 حفظ القيم</button></div>'+
+    '<div class="comp-desc mt-1">تُمنح النقاط تلقائياً مع كل تصويت أو مشاركة. عدّل القيم والمثالات يدوياً هنا.</div>'+
+    '<div class="actions-row mt-1" style="flex-wrap:wrap">'+
+    '<div class="input-group" style="flex:1;min-width:120px"><label class="label">🗳️ نقاط التصويت</label><input type="number" min="0" step="1" class="input" id="ptsVote" value="'+pointsCfg.vote+'" /></div>'+
+    '<div class="input-group" style="flex:1;min-width:120px"><label class="label">📝 نقاط المشاركة</label><input type="number" min="0" step="1" class="input" id="ptsPart" value="'+pointsCfg.participate+'" /></div>'+
+    '</div><div id="ptsCfgMsg" class="msg" style="display:none"></div></div>';
+    main.innerHTML+='<div class="glass card"><div class="section-title">🏆 المتصدرون</div><div id="ptsRankWrap"><div class="empty-state" style="padding:8px">⏳ تحميل...</div></div></div>';
+    db.ref('communityPoints').once('value',snap=>{
+        const wrap=document.getElementById('ptsRankWrap'); if(!wrap)return;
+        wrap.innerHTML='';
+        const arr=[];
+        if(snap.exists())snap.forEach(child=>{
+            const v=child.val();
+            arr.push({key:child.key,name:v.name||child.key,role:v.role||'',group:v.group||'',phone:v.phone||'',points:(v.stats&&v.stats.points)||0,votes:(v.stats&&v.stats.votes)||0,parts:(v.stats&&v.stats.participations)||0,log:v.log||{}});
+        });
+        if(!arr.length){ wrap.innerHTML='<div class="empty-state" style="padding:8px">لا توجد نقاط بعد — ابدأ المشاركة والتصويت</div>'; return; }
+        arr.sort((a,b)=>b.points-a.points);
+        arr.forEach((u,i)=>{
+            const roleIcon=({student:'🎓',guardian:'👨‍👩‍👦',external:'📱',judge:'⚖️',teacher:'👨‍🏫',assistant:'👤'})[u.role]||'👤';
+            const acts=Object.keys(u.log).length;
+            const details=Object.entries(u.log).filter(([k])=>k.indexOf('manual:')!==0).slice(0,8).map(([k,v])=>{
+                const t=new Date(v.at).toLocaleString('ar-EG');
+                const lbl=v.type==='participate'?'📝 مشاركة':'🗳️ تصويت';
+                return '<div class="log-item">'+lbl+' <span class="badge">'+(v.pts||0)+'</span> · '+escapeHtml(t)+'</div>';
+            }).join('');
+            const row=document.createElement('div'); row.className='row-line';
+            row.style.cssText='flex-wrap:wrap;row-gap:8px';
+            row.innerHTML='<div class="rank-num">#'+(i+1)+'</div>'+
+            '<div style="flex:1;min-width:160px"><div class="name">'+roleIcon+' '+escapeHtml(u.name)+' <span class="voter-role">'+escapeHtml(roleLabel(u.role))+'</span></div>'+
+            '<div class="sub">🗳️ '+u.votes+' تصويت · 📝 '+u.parts+' مشاركة · '+(u.group?('🗂️ '+escapeHtml(u.group)):(u.phone?('📱 '+escapeHtml(u.phone)):''))+'</div>'+
+            (details?'<div style="margin-top:6px">'+details+'</div>':'')+'</div>'+
+            '<div style="text-align:center"><div class="pts-num">'+u.points+'</div><div class="sub">نقطة</div></div>'+
+            '<div class="actions-col"><input type="number" class="input pts-adjust" id="adj_'+u.key.replace(/[^a-zA-Z0-9_:]/g,'_')+'" placeholder="±" style="width:70px" />'+
+            '<button class="btn btn-secondary btn-xs" onclick="adjustPoints(\''+u.key+'\')">🔧 تصحيح</button></div>';
+            wrap.appendChild(row);
+        });
+    });
+}
+function savePointsCfg(){
+    const vote=parseInt(document.getElementById('ptsVote').value,10)||0;
+    const participate=parseInt(document.getElementById('ptsPart').value,10)||0;
+    db.ref('communityConfig/points').set({vote,participate}).then(()=>{
+        pointsCfg.vote=vote; pointsCfg.participate=participate;
+        const m=document.getElementById('ptsCfgMsg'); if(m){ m.style.display='block'; m.textContent='✅ حُفظت نقاط التحفيز بنجاح'; setTimeout(()=>{m.style.display='none';},2500); }
+        showToast('🏅 حُفظت قيم النقاط');
+    }).catch(e=>showToast('❌ '+(e.message||e)));
+}
+async function adjustPoints(key){
+    const id=key.replace(/[^a-zA-Z0-9_:]/g,'_');
+    const el=document.getElementById('adj_'+id); if(!el)return;
+    const delta=parseInt(el.value,10);
+    if(!delta||isNaN(delta)){ showToast('❌ أدخل قيمة التصحيح (±)'); return; }
+    const ref=db.ref('communityPoints/'+key);
+    const snap=await ref.child('stats').once('value');
+    const st=snap.val()||{points:0,votes:0,participations:0};
+    const upd={ 'stats/points':(st.points||0)+delta, ['log/manual:'+Date.now()]:{type:'manual',pts:delta,at:Date.now()} };
+    await ref.update(upd);
+    el.value='';
+    showToast('🔧 عُدّلت نقاط '+key+' بمقدار '+(delta>0?'+':'')+delta);
+    const main=document.getElementById('adminMain'); if(main)renderAdminPoints(main);
+}
+async function runBackfill(){
+    if(!isAdmin()){ showToast('❌ غير مصرح'); return; }
+    const btn=document.querySelector('#adminMain .btn-secondary'); if(btn)btn.textContent='⏳ جارٍ الحساب...';
+    try{
+        const r=await backfillPoints();
+        showToast('✅ اكتمل الاحتساب: '+(r.votes||0)+' تصويت + '+(r.parts||0)+' مشاركة، تخطّى '+(r.skipped||0));
+        const main=document.getElementById('adminMain'); if(main)renderAdminPoints(main);
+    }catch(e){ showToast('❌ '+(e.message||e)); }
 }
 function loginAsStudent(key){
     if(!isAdmin()){ showToast('❌ غير مصرح'); return; }
@@ -3071,6 +3476,7 @@ async function castVote(compId,rn,mid,side,btnEl){
         const name=currentStudentsFullName(c2,(m[side]&&m[side].sn)||'');
         confettiBurst(18);
         showToast('🗳️ سُجّل صوتك لـ '+name+' — شكراً لتفاعلك! 🎉');
+        awardPoints('vote:'+compId+':'+rn+':'+mid,'vote');
     }catch(e){ showToast('❌ '+(e.message||e)); }
 }
 async function openRoundVoting(compId,rn){
@@ -3732,6 +4138,7 @@ async function submitNewSubmission(){
     catch(e){ msg('nsMsg','❌ '+(e.message||e),'error'); return; }
     closeNsModal();
     showToast('✅ رُفعت المشاركة بنجاح');
+    awardPoints('part:'+_nsComp.id,'participate');
 }
 function nsMediaChanged(type){
     document.getElementById('nsBlockImage').classList.toggle('hidden',type!=='image');
