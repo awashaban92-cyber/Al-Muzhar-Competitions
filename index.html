@@ -583,6 +583,7 @@ let extOtpPending=null; // {phone, name, isNew} أثناء تحقق المصوت
 let extLoginMode='otp'; // 'otp' | 'pwd' | 'create' — وضع دخول المصوت الخارجي
 let extPwdPhone=null; // الرقم قيد التحقق بكلمة السر
 let extPwdAttempts=0; // عدّاد محاولات كلمة السر الخاطئة
+let _extAllRecords=[]; // سجلات الخارجيين المخزنة للبحث/الترتيب في لوحة المعلم
 
 // ===== helpers =====
 function escapeHtml(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, x => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[x]); }
@@ -2264,7 +2265,7 @@ async function toggleExternal(phone){
     const cur=snap.val();
     await db.ref('communityExternals/'+phone).update({disabled:!cur.disabled});
     showToast(cur.disabled?'✅ أُعيد تفعيل الحساب':'🚫 عُطّل الحساب');
-    renderAdminExternal(document.getElementById('adminMain'));
+    filterAdminExternal();
 }
 async function setExternalPwd(phone,name){
     const e=await db.ref('communityExternals/'+phone).once('value');
@@ -2275,36 +2276,58 @@ async function setExternalPwd(phone,name){
     if(np.length<4){ showToast('❌ كلمة السر قصيرة — 4 أحرف على الأقل'); return; }
     await db.ref('communityExternals/'+phone).update({pwd:np});
     showToast('✅ حُدّثت كلمة السر');
-    renderAdminExternal(document.getElementById('adminMain'));
+    filterAdminExternal();
 }
 function renderAdminExternal(main){
     main.innerHTML='<div class="glass card"><div class="section-title">📱 المشاركون الخارجيون <div class="spacer"></div><span class="badge" id="extCount">0</span></div>'+
     '<div class="comp-desc mt-1">جميع المستخدمين الخارجيين المسجلين عبر رقم الهاتف</div>'+
+    '<input type="search" class="input" id="extSearchPhone" placeholder="🔍 بحث بالرقم أو الاسم..." oninput="filterAdminExternal()" style="margin-bottom:8px" />'+
     '<div id="extListWrap"><div class="empty-state" style="padding:8px">⏳ تحميل...</div></div></div>';
     db.ref('communityExternals').once('value',snap=>{
-        const count=document.getElementById('extCount');
         const wrap=document.getElementById('extListWrap'); if(!wrap)return;
-        wrap.innerHTML='';
-        if(!snap.exists()){ wrap.innerHTML='<div class="empty-state" style="padding:8px">لا يوجد خارجيون بعد</div>'; if(count)count.textContent='0'; return; }
-        let n=0;
-        snap.forEach(child=>{
-            const e=child.val(); n++;
-            const d=e.at?new Date(e.at).toLocaleString('ar-EG'):'-';
-            const disabled=!!e.disabled;
-            const wa='https://wa.me/'+toE164(child.key)+'?text='+encodeURIComponent(extWaPwdMsg(e));
-            const row=document.createElement('div'); row.className='row-line';
-            row.style.opacity=(disabled?'0.62':'1');
-            row.innerHTML=avatarHTML(e)+
-            '<div style="flex:1;min-width:0"><div class="name">'+escapeHtml(e.name||'')+' '+(disabled?'<span class="badge">🚫 معطّل</span>':'<span class="badge open">🟢 نشط</span>')+'</div>'+
-            '<div class="sub">📱 '+escapeHtml(child.key)+' · 🗓️ '+escapeHtml(d)+'</div>'+
-            '<div class="sub">🔑 '+escapeHtml(String(e.pwd||'—'))+'</div></div>'+
-            '<a class="btn btn-success btn-xs" target="_blank" rel="noopener" href="'+wa+'">💬 كلمة السر</a>'+
-            '<button class="btn '+(disabled?'btn-primary':'btn-secondary')+' btn-xs" onclick="toggleExternal(\''+escapeHtml(child.key)+'\')">'+(disabled?'✅ تفعيل':'🚫 تعطيل')+'</button>'+
-            '<button class="btn btn-secondary btn-xs" onclick="setExternalPwd(\''+escapeHtml(child.key)+'\',\''+escapeHtml(e.name||'')+'\')">🔑 تعديل</button>';
-            wrap.appendChild(row);
+        _extAllRecords=[];
+        if(snap.exists())snap.forEach(child=>{
+            const e=child.val();
+            if(!e)return;
+            _extAllRecords.push({phone:child.key,e});
         });
-        if(count)count.textContent=n;
+        _extAllRecords.sort((a,b)=>(a.e.name||'').localeCompare(b.e.name||'','ar'));
+        filterAdminExternal();
     });
+}
+function filterAdminExternal(){
+    const wrap=document.getElementById('extListWrap'); if(!wrap)return;
+    const count=document.getElementById('extCount');
+    const q=(document.getElementById('extSearchPhone')?document.getElementById('extSearchPhone').value:'').trim();
+    const qNorm=normalizeEgyptPhone(q)||q.replace(/[^0-9]/g,'');
+    const qLower=(q||'').toLowerCase();
+    let list=_extAllRecords;
+    if(q){
+        list=_extAllRecords.filter(rec=>{
+            const phone=String(rec.phone||'');
+            const name=(rec.e.name||'').toLowerCase();
+            return (qNorm&&phone.indexOf(qNorm)!==-1)||(qLower&&name.indexOf(qLower)!==-1);
+        });
+    }
+    wrap.innerHTML='';
+    if(!list.length){ wrap.innerHTML='<div class="empty-state" style="padding:8px">'+(q?'لا توجد نتائج مطابقة':'لا يوجد خارجيون بعد')+'</div>'; if(count)count.textContent=0; return; }
+    list.forEach(rec=>{
+        const e=rec.e;
+        const d=e.at?new Date(e.at).toLocaleString('ar-EG'):'-';
+        const disabled=!!e.disabled;
+        const wa='https://wa.me/'+toE164(rec.phone)+'?text='+encodeURIComponent(extWaPwdMsg(e));
+        const row=document.createElement('div'); row.className='row-line';
+        row.style.opacity=(disabled?'0.62':'1');
+        row.innerHTML=avatarHTML(e)+
+        '<div style="flex:1;min-width:0"><div class="name">'+escapeHtml(e.name||'')+' '+(disabled?'<span class="badge">🚫 معطّل</span>':'<span class="badge open">🟢 نشط</span>')+'</div>'+
+        '<div class="sub">📱 '+escapeHtml(rec.phone)+' · 🗓️ '+escapeHtml(d)+'</div>'+
+        '<div class="sub">🔑 '+escapeHtml(String(e.pwd||'—'))+'</div></div>'+
+        '<a class="btn btn-success btn-xs" target="_blank" rel="noopener" href="'+wa+'">💬 كلمة السر</a>'+
+        '<button class="btn '+(disabled?'btn-primary':'btn-secondary')+' btn-xs" onclick="toggleExternal(\''+escapeHtml(rec.phone)+'\')">'+(disabled?'✅ تفعيل':'🚫 تعطيل')+'</button>'+
+        '<button class="btn btn-secondary btn-xs" onclick="setExternalPwd(\''+escapeHtml(rec.phone)+'\',\''+escapeHtml(e.name||'')+'\')">🔑 تعديل</button>';
+        wrap.appendChild(row);
+    });
+    if(count)count.textContent=list.length;
 }
 function renderAdminPoints(main){
     main.innerHTML='<div class="glass card"><div class="section-title">🏅 النقاط التحفيزية <div class="spacer"></div><button class="btn btn-secondary btn-sm" onclick="runBackfill()">🔄 احتساب السابق</button><button class="btn btn-primary btn-sm" onclick="savePointsCfg()">💾 حفظ القيم</button></div>'+
